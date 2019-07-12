@@ -1,0 +1,3 @@
+[submodule "3rdparty/bptree"]
+	path = 3rdparty/bptree
+	url = https://github.com/Jimx-/bptree.git
