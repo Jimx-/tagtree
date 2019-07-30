@@ -2,7 +2,6 @@
 #define _TAGTREE_SERIES_MANAGER_H_
 
 #include "promql/labels.h"
-#include "tagtree/common.h"
 #include "tagtree/tsid.h"
 
 #include <memory>

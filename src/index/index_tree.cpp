@@ -1,4 +1,5 @@
 #include "tagtree/index/index_tree.h"
+#include "bptree/mem_page_cache.h"
 #include "tagtree/index/index_server.h"
 
 #include <cassert>
@@ -32,10 +33,10 @@ void IndexTree::clear_key<StringKey<IndexTree::KEY_WIDTH>>(
     key = StringKey<KEY_WIDTH>();
 }
 
-IndexTree::IndexTree(IndexServer* server) : server(server)
-{
-    btree = std::make_unique<BPTree>(server->get_page_cache());
-}
+IndexTree::IndexTree()
+    : page_cache(std::make_unique<bptree::MemPageCache>(4096)),
+      btree(std::make_unique<BPTree>(page_cache.get()))
+{}
 
 void IndexTree::query_postings(const promql::LabelMatcher& matcher,
                                std::unordered_set<TSID>& postings)
@@ -147,7 +148,7 @@ void IndexTree::query_postings(const promql::LabelMatcher& matcher,
         }
 
         auto page_id = it->second;
-        auto page = server->get_page_cache()->fetch_page(page_id);
+        auto page = page_cache->fetch_page(page_id);
         char* p = (char*)page->lock();
 
         uint32_t name_len = *(uint32_t*)p;
@@ -165,7 +166,7 @@ void IndexTree::query_postings(const promql::LabelMatcher& matcher,
 
         if (!matcher.match(label)) {
             page->unlock();
-            server->get_page_cache()->unpin_page(page, true);
+            page_cache->unpin_page(page, true);
             it++;
             continue;
         }
@@ -178,7 +179,7 @@ void IndexTree::query_postings(const promql::LabelMatcher& matcher,
         }
 
         page->unlock();
-        server->get_page_cache()->unpin_page(page, true);
+        page_cache->unpin_page(page, true);
 
         it++;
     }
@@ -218,24 +219,12 @@ void IndexTree::resolve_label_matchers(
     }
 }
 
-bool IndexTree::get_labels(const TSID& tsid, std::vector<promql::Label>& labels)
-{
-    auto* entry = series_manager.get(tsid);
-    if (!entry) return false;
-    labels.clear();
-    std::copy(entry->labels.begin(), entry->labels.end(),
-              std::back_inserter(labels));
-    return true;
-}
-
 void IndexTree::add_series(const TSID& tsid,
                            const std::vector<promql::Label>& labels)
 {
     for (auto&& label : labels) {
         insert_posting_id(label, tsid);
     }
-
-    auto* entry = series_manager.add(tsid, labels);
 }
 
 void IndexTree::insert_posting_id(const promql::Label& label, const TSID& tsid)
@@ -246,7 +235,7 @@ void IndexTree::insert_posting_id(const promql::Label& label, const TSID& tsid)
 
     if (page_ids.empty()) {
         /* create page */
-        auto page = server->get_page_cache()->new_page();
+        auto page = page_cache->new_page();
         char* buf = (char*)page->lock();
 
         memset(buf, 0, page->get_size());
@@ -261,7 +250,7 @@ void IndexTree::insert_posting_id(const promql::Label& label, const TSID& tsid)
         memcpy(buf, label.value.c_str(), label.value.length());
 
         page->unlock();
-        server->get_page_cache()->unpin_page(page, true);
+        page_cache->unpin_page(page, true);
 
         btree->insert(key, page->get_id());
         page_ids.push_back(page->get_id());
@@ -269,7 +258,7 @@ void IndexTree::insert_posting_id(const promql::Label& label, const TSID& tsid)
 
     /* update pages */
     for (auto&& pid : page_ids) {
-        auto page = server->get_page_cache()->fetch_page(pid);
+        auto page = page_cache->fetch_page(pid);
         assert(page != nullptr);
 
         char* buf = (char*)page->lock();
@@ -289,14 +278,14 @@ void IndexTree::insert_posting_id(const promql::Label& label, const TSID& tsid)
 
         if (name != label.name || value != label.value) {
             page->unlock();
-            server->get_page_cache()->unpin_page(page, true);
+            page_cache->unpin_page(page, true);
             continue;
         }
         tsid.serialize(p + sizeof(TSID) * num_postings);
         *((uint32_t*)buf + 2) = num_postings + 1;
 
         page->unlock();
-        server->get_page_cache()->unpin_page(page, true);
+        page_cache->unpin_page(page, true);
     }
 }
 

@@ -1,6 +1,7 @@
 #ifndef _TAGTREE_INDEX_TREE_H_
 #define _TAGTREE_INDEX_TREE_H_
 
+#include "bptree/page_cache.h"
 #include "bptree/tree.h"
 #include "promql/labels.h"
 #include "tagtree/index/series_manager.h"
@@ -35,13 +36,12 @@ struct KeyTypeSelector<
 
 class IndexTree {
 public:
-    IndexTree(IndexServer* server);
+    IndexTree();
 
     void add_series(const TSID& tsid, const std::vector<promql::Label>& labels);
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
                            std::unordered_set<TSID>& tsids);
-    bool get_labels(const TSID& tsid, std::vector<promql::Label>& labels);
 
 private:
     static const size_t NAME_BYTES = 4;
@@ -53,8 +53,7 @@ private:
                                      StringKey<KEY_WIDTH>>::type;
     using BPTree = bptree::BTree<200, KeyType, bptree::PageID>;
 
-    IndexServer* server;
-    SeriesManager series_manager;
+    std::unique_ptr<bptree::AbstractPageCache> page_cache;
     std::mutex tree_mutex;
     std::unique_ptr<BPTree> btree;
 
