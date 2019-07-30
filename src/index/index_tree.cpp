@@ -32,13 +32,13 @@ void IndexTree::clear_key<StringKey<IndexTree::KEY_WIDTH>>(
     key = StringKey<KEY_WIDTH>();
 }
 
-IndexTree::IndexTree(IndexServer* server) : next_id(0), server(server)
+IndexTree::IndexTree(IndexServer* server) : server(server)
 {
     btree = std::make_unique<BPTree>(server->get_page_cache());
 }
 
 void IndexTree::query_postings(const promql::LabelMatcher& matcher,
-                               std::set<PostingID>& postings)
+                               std::unordered_set<TSID>& postings)
 {
     KeyType start_key, end_key, match_key, name_mask;
     uint8_t key_buf[KEY_WIDTH];
@@ -70,24 +70,33 @@ void IndexTree::query_postings(const promql::LabelMatcher& matcher,
         /* key range: from   | hash(name)     | hash(value) | *
          *              to   | hash(name) + 1 |      0      | */
     case MatchOp::LTE:
-    case MatchOp::GTE: {
-        start_key = make_key(name, value);
+        /* key range: from   | hash(name) |      0      |             *
+         *              to   | hash(name) | hash(value) | (inclusive) */
+    case MatchOp::GTE:
+        /* key range: from   | hash(name)     | hash(value) | (inclusive) *
+         *              to   | hash(name) + 1 |      0      |             */
+    case MatchOp::EQL_REGEX:
+    case MatchOp::NEQ_REGEX:
+        /* key range: from   | hash(name)     | 0 | *
+         *              to   | hash(name) + 1 | 0 | */
+        {
+            start_key = make_key(name, value);
 
-        memset(key_buf, 0, sizeof(key_buf));
-        key_buf[NAME_BYTES - 1] = 1;
-        pack_key(key_buf, end_key);
-        end_key = end_key + start_key;
+            memset(key_buf, 0, sizeof(key_buf));
+            key_buf[NAME_BYTES - 1] = 1;
+            pack_key(key_buf, end_key);
+            end_key = end_key + start_key;
 
-        start_key = start_key & name_mask;
-        end_key = end_key & name_mask;
+            start_key = start_key & name_mask;
+            end_key = end_key & name_mask;
 
-        if (op == MatchOp::LSS || op == MatchOp::LTE) {
-            end_key = match_key;
-        } else if (op == MatchOp::GTR || op == MatchOp::GTE) {
-            start_key = match_key;
+            if (op == MatchOp::LSS || op == MatchOp::LTE) {
+                end_key = match_key;
+            } else if (op == MatchOp::GTR || op == MatchOp::GTE) {
+                start_key = match_key;
+            }
+            break;
         }
-        break;
-    }
     default:
         break;
     }
@@ -127,34 +136,50 @@ void IndexTree::query_postings(const promql::LabelMatcher& matcher,
                 goto out;
             }
             break;
+        case MatchOp::EQL_REGEX:
+        case MatchOp::NEQ_REGEX:
+            if (it->first >= end_key) {
+                goto out;
+            }
+            break;
         default:
             break;
         }
 
         auto page_id = it->second;
         auto page = server->get_page_cache()->fetch_page(page_id);
-        uint64_t* p = (uint64_t*)page->lock();
-        uint64_t* lim = (uint64_t*)((uint8_t*)p + page->get_size());
-        size_t start_index = 0;
+        char* p = (char*)page->lock();
 
-        while (p < lim) {
-            if (*p > 0) {
-                for (uint64_t i = 0; i < 64; i++) {
-                    if ((*p) & ((uint64_t)1 << i)) {
-                        postings.insert((PostingID)(start_index + i));
-                    }
-                }
-            }
+        uint32_t name_len = *(uint32_t*)p;
+        p += sizeof(uint32_t);
+        uint32_t value_len = *(uint32_t*)p;
+        p += sizeof(uint32_t);
+        uint32_t num_postings = *(uint32_t*)p;
+        p += sizeof(uint32_t);
 
-            start_index += 64;
-            p++;
+        std::string name(p, p + name_len);
+        p += name_len;
+        std::string value(p, p + value_len);
+        p += value_len;
+        promql::Label label(name, value);
+
+        if (!matcher.match(label)) {
+            page->unlock();
+            server->get_page_cache()->unpin_page(page, true);
+            it++;
+            continue;
         }
+
+        while (num_postings--) {
+            TSID tsid;
+            tsid.deserialize(p);
+            postings.insert(tsid);
+            p += sizeof(TSID);
+        }
+
         page->unlock();
         server->get_page_cache()->unpin_page(page, true);
 
-        if (op == MatchOp::EQL) {
-            break;
-        }
         it++;
     }
 
@@ -167,9 +192,8 @@ void IndexTree::resolve_label_matchers(
     std::unordered_set<TSID>& tsids)
 {
     bool first = true;
-    std::set<PostingID> posting_ids;
     for (auto&& p : matchers) {
-        std::set<PostingID> postings;
+        std::unordered_set<TSID> postings;
         query_postings(p, postings);
 
         if (postings.empty()) {
@@ -178,35 +202,25 @@ void IndexTree::resolve_label_matchers(
         }
 
         if (first) {
-            posting_ids = std::move(postings);
+            tsids = std::move(postings);
             first = false;
         } else {
-            auto it1 = posting_ids.begin();
-            auto it2 = postings.begin();
+            auto it1 = tsids.begin();
 
-            while ((it1 != posting_ids.end()) && (it2 != postings.end())) {
-                if (*it1 < *it2) {
-                    posting_ids.erase(it1++);
-                } else if (*it2 < *it1) {
-                    ++it2;
+            for (auto it = tsids.begin(); it != tsids.end();) {
+                if (postings.find(*it) == postings.end()) {
+                    tsids.erase(it++);
                 } else {
-                    ++it1;
-                    ++it2;
+                    ++it;
                 }
             }
-            posting_ids.erase(it1, posting_ids.end());
         }
-    }
-
-    for (auto&& p : posting_ids) {
-        auto* entry = series_manager.get(p);
-        tsids.insert(entry->tsid);
     }
 }
 
 bool IndexTree::get_labels(const TSID& tsid, std::vector<promql::Label>& labels)
 {
-    auto* entry = series_manager.get_tsid(tsid);
+    auto* entry = series_manager.get(tsid);
     if (!entry) return false;
     labels.clear();
     std::copy(entry->labels.begin(), entry->labels.end(),
@@ -214,49 +228,73 @@ bool IndexTree::get_labels(const TSID& tsid, std::vector<promql::Label>& labels)
     return true;
 }
 
-PostingID IndexTree::get_new_id() { return next_id++; }
-
-TSID IndexTree::add_series(const std::vector<promql::Label>& labels)
+void IndexTree::add_series(const TSID& tsid,
+                           const std::vector<promql::Label>& labels)
 {
-    auto pid = get_new_id();
-
     for (auto&& label : labels) {
-        insert_label(label, pid);
+        insert_posting_id(label, tsid);
     }
 
-    auto* entry = series_manager.add(pid, labels);
-    return entry->tsid;
+    auto* entry = series_manager.add(tsid, labels);
 }
 
-void IndexTree::insert_label(const promql::Label& label, PostingID pid)
+void IndexTree::insert_posting_id(const promql::Label& label, const TSID& tsid)
 {
     auto key = make_key(label.name, label.value);
-    insert_posting_id(key, pid);
-}
-
-void IndexTree::insert_posting_id(const KeyType& key, PostingID pid)
-{
     std::vector<bptree::PageID> page_ids;
     btree->get_value(key, page_ids);
 
     if (page_ids.empty()) {
         /* create page */
         auto page = server->get_page_cache()->new_page();
-        auto buf = page->lock();
+        char* buf = (char*)page->lock();
+
         memset(buf, 0, page->get_size());
+        *(uint32_t*)buf = (uint32_t)label.name.length();
+        buf += sizeof(uint32_t);
+        *(uint32_t*)buf = (uint32_t)label.value.length();
+        buf += sizeof(uint32_t);
+        *(uint32_t*)buf = 0;
+        buf += sizeof(uint32_t);
+        memcpy(buf, label.name.c_str(), label.name.length());
+        buf += label.name.length();
+        memcpy(buf, label.value.c_str(), label.value.length());
+
         page->unlock();
         server->get_page_cache()->unpin_page(page, true);
+
         btree->insert(key, page->get_id());
         page_ids.push_back(page->get_id());
     }
 
     /* update pages */
-    for (auto&& p : page_ids) {
-        auto page = server->get_page_cache()->fetch_page(p);
+    for (auto&& pid : page_ids) {
+        auto page = server->get_page_cache()->fetch_page(pid);
         assert(page != nullptr);
 
-        uint64_t* buf = (uint64_t*)page->lock();
-        buf[pid >> 6] |= (uint64_t)1 << (pid & 0x3f);
+        char* buf = (char*)page->lock();
+        char* p = buf;
+
+        uint32_t name_len = *(uint32_t*)p;
+        p += sizeof(uint32_t);
+        uint32_t value_len = *(uint32_t*)p;
+        p += sizeof(uint32_t);
+        uint32_t num_postings = *(uint32_t*)p;
+        p += sizeof(uint32_t);
+
+        std::string name(p, p + name_len);
+        p += name_len;
+        std::string value(p, p + value_len);
+        p += value_len;
+
+        if (name != label.name || value != label.value) {
+            page->unlock();
+            server->get_page_cache()->unpin_page(page, true);
+            continue;
+        }
+        tsid.serialize(p + sizeof(TSID) * num_postings);
+        *((uint32_t*)buf + 2) = num_postings + 1;
+
         page->unlock();
         server->get_page_cache()->unpin_page(page, true);
     }

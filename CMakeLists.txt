@@ -25,6 +25,8 @@ set(SOURCE_FILES
     ${TOPDIR}/src/index/series_manager.cpp)
             
 set(HEADER_FILES
+    ${TOPDIR}/include/tagtree/storage.h
+    ${TOPDIR}/include/tagtree/tsid.h
     ${TOPDIR}/include/tagtree/adapters/prom/appender.h
     ${TOPDIR}/include/tagtree/adapters/prom/indexed_storage.h
     ${TOPDIR}/include/tagtree/adapters/prom/querier.h

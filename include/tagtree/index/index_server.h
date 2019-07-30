@@ -28,7 +28,9 @@ public:
 
     TSID add_series(const std::vector<promql::Label>& labels)
     {
-        return index_tree.add_series(labels);
+        TSID new_id;
+        index_tree.add_series(new_id, labels);
+        return new_id;
     }
 
     void label_values(const std::string& label_name,
@@ -39,8 +41,6 @@ public:
 private:
     std::unique_ptr<bptree::AbstractPageCache> page_cache;
     IndexTree index_tree;
-
-    PostingID create_series(const std::vector<promql::Label>& labels);
 };
 
 } // namespace tagtree

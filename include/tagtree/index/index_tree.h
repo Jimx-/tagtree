@@ -37,7 +37,7 @@ class IndexTree {
 public:
     IndexTree(IndexServer* server);
 
-    TSID add_series(const std::vector<promql::Label>& labels);
+    void add_series(const TSID& tsid, const std::vector<promql::Label>& labels);
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
                            std::unordered_set<TSID>& tsids);
@@ -55,17 +55,13 @@ private:
 
     IndexServer* server;
     SeriesManager series_manager;
-    std::atomic<PostingID> next_id;
     std::mutex tree_mutex;
     std::unique_ptr<BPTree> btree;
 
-    PostingID get_new_id();
-
-    void insert_label(const promql::Label& label, PostingID pid);
-    void insert_posting_id(const KeyType& key, PostingID pid);
+    void insert_posting_id(const promql::Label& label, const TSID& pid);
 
     void query_postings(const promql::LabelMatcher& matcher,
-                        std::set<PostingID>& posting_ids);
+                        std::unordered_set<TSID>& posting_ids);
 
     KeyType make_key(const std::string& name, const std::string& value);
 
