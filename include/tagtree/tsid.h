@@ -1,5 +1,5 @@
-#ifndef _TSID_H_
-#define _TSID_H_
+#ifndef _TAGTREE_TSID_H_
+#define _TAGTREE_TSID_H_
 
 #include <functional>
 #include <string>
