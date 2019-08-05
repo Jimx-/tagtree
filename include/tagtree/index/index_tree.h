@@ -4,8 +4,8 @@
 #include "bptree/page_cache.h"
 #include "bptree/tree.h"
 #include "promql/labels.h"
-#include "tagtree/index/series_manager.h"
 #include "tagtree/index/string_key.h"
+#include "tagtree/series/series_manager.h"
 #include "tagtree/tsid.h"
 
 #include <atomic>
@@ -36,7 +36,7 @@ struct KeyTypeSelector<
 
 class IndexTree {
 public:
-    IndexTree();
+    IndexTree(std::string_view dir);
 
     void add_series(const TSID& tsid, const std::vector<promql::Label>& labels);
     void

@@ -1,5 +1,5 @@
 #include "tagtree/index/index_tree.h"
-#include "bptree/mem_page_cache.h"
+#include "bptree/heap_page_cache.h"
 #include "tagtree/index/index_server.h"
 
 #include <cassert>
@@ -33,8 +33,8 @@ void IndexTree::clear_key<StringKey<IndexTree::KEY_WIDTH>>(
     key = StringKey<KEY_WIDTH>();
 }
 
-IndexTree::IndexTree()
-    : page_cache(std::make_unique<bptree::MemPageCache>(4096)),
+IndexTree::IndexTree(std::string_view dir)
+    : page_cache(std::make_unique<bptree::HeapPageCache>(dir, true)),
       btree(std::make_unique<BPTree>(page_cache.get()))
 {}
 

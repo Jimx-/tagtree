@@ -5,9 +5,12 @@
 namespace tagtree {
 namespace prom {
 
-IndexedStorage::IndexedStorage(tagtree::Storage* storage) : storage(storage)
+IndexedStorage::IndexedStorage(std::string_view index_dir,
+                               tagtree::Storage* storage,
+                               tagtree::AbstractSeriesManager* sm)
+    : storage(storage)
 {
-    index_server = std::make_unique<IndexServer>();
+    index_server = std::make_unique<IndexServer>(index_dir, sm);
 }
 
 std::shared_ptr<promql::Querier> IndexedStorage::querier(uint64_t mint,

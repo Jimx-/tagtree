@@ -2,7 +2,7 @@
 #define _TAGTREE_INDEX_SERVER_H_
 
 #include "tagtree/index/index_tree.h"
-#include "tagtree/index/series_manager.h"
+#include "tagtree/series/series_manager.h"
 
 #include <memory>
 #include <unordered_map>
@@ -11,7 +11,7 @@ namespace tagtree {
 
 class IndexServer {
 public:
-    IndexServer();
+    IndexServer(std::string_view index_dir, AbstractSeriesManager* sm);
 
     inline void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
@@ -29,7 +29,7 @@ public:
 
 private:
     IndexTree index_tree;
-    SeriesManager series_manager;
+    AbstractSeriesManager* series_manager;
 };
 
 } // namespace tagtree

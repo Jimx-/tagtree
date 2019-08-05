@@ -14,19 +14,16 @@ struct SeriesEntry {
     std::vector<promql::Label> labels;
 
     SeriesEntry(const std::vector<promql::Label>& labels) : labels(labels) {}
-    SeriesEntry(const TSID& tsid, const std::vector<promql::Label>& labels)
+    SeriesEntry(const TSID& tsid, const std::vector<promql::Label>& labels = {})
         : tsid(tsid), labels(labels)
     {}
 };
 
-class SeriesManager {
+class AbstractSeriesManager {
 public:
-    SeriesEntry* add(const TSID& tsid,
-                     const std::vector<promql::Label>& labels);
-    SeriesEntry* get(const TSID& tsid);
-
-private:
-    std::unordered_map<TSID, std::unique_ptr<SeriesEntry>> series_map;
+    virtual SeriesEntry* add(const TSID& tsid,
+                             const std::vector<promql::Label>& labels) = 0;
+    virtual SeriesEntry* get(const TSID& tsid) = 0;
 };
 
 } // namespace tagtree
