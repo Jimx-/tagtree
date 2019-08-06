@@ -20,10 +20,6 @@ public:
                        std::string_view username = RADOS_USERNAME,
                        std::string_view pool = RADOS_POOL);
 
-    virtual SeriesEntry* add(const TSID& tsid,
-                             const std::vector<promql::Label>& labels);
-    virtual SeriesEntry* get(const TSID& tsid);
-
 private:
     static const std::string RADOS_CLUSTER;
     static const std::string RADOS_USERNAME;
@@ -32,10 +28,8 @@ private:
     librados::Rados cluster;
     librados::IoCtx ioctx;
 
-    std::unordered_map<TSID, std::unique_ptr<SeriesEntry>> series_map;
-
-    bool read_entry(SeriesEntry* entry);
-    void write_entry(SeriesEntry* entry);
+    virtual bool read_entry(SeriesEntry* entry);
+    virtual void write_entry(SeriesEntry* entry);
 };
 
 } // namespace tagtree

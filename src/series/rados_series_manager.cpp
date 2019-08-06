@@ -35,32 +35,6 @@ RadosSeriesManager::RadosSeriesManager(std::string_view conf,
     }
 }
 
-SeriesEntry* RadosSeriesManager::add(const TSID& tsid,
-                                     const std::vector<promql::Label>& labels)
-{
-    series_map[tsid] = std::make_unique<SeriesEntry>(tsid, labels);
-    auto* entry = series_map[tsid].get();
-    write_entry(entry);
-    return entry;
-}
-
-SeriesEntry* RadosSeriesManager::get(const TSID& tsid)
-{
-    auto it = series_map.find(tsid);
-    if (it == series_map.end()) {
-        auto entry = std::make_unique<SeriesEntry>(tsid);
-        if (!read_entry(entry.get())) {
-            return nullptr;
-        }
-
-        auto* ret = entry.get();
-        series_map[tsid] = std::move(entry);
-        return ret;
-    }
-
-    return it->second.get();
-}
-
 bool RadosSeriesManager::read_entry(SeriesEntry* entry)
 {
     int ret;

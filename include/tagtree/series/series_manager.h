@@ -21,9 +21,16 @@ struct SeriesEntry {
 
 class AbstractSeriesManager {
 public:
-    virtual SeriesEntry* add(const TSID& tsid,
-                             const std::vector<promql::Label>& labels) = 0;
-    virtual SeriesEntry* get(const TSID& tsid) = 0;
+    SeriesEntry* add(const TSID& tsid,
+                     const std::vector<promql::Label>& labels);
+    SeriesEntry* get(const TSID& tsid);
+
+protected:
+    virtual bool read_entry(SeriesEntry* entry) = 0;
+    virtual void write_entry(SeriesEntry* entry) = 0;
+
+private:
+    std::unordered_map<TSID, std::unique_ptr<SeriesEntry>> series_map;
 };
 
 } // namespace tagtree
