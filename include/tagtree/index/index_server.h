@@ -11,7 +11,8 @@ namespace tagtree {
 
 class IndexServer {
 public:
-    IndexServer(std::string_view index_dir, AbstractSeriesManager* sm);
+    IndexServer(std::string_view index_dir, size_t cache_size,
+                AbstractSeriesManager* sm);
 
     inline void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,

@@ -36,7 +36,7 @@ struct KeyTypeSelector<
 
 class IndexTree {
 public:
-    IndexTree(std::string_view dir);
+    IndexTree(std::string_view dir, size_t cache_size);
 
     void add_series(const TSID& tsid, const std::vector<promql::Label>& labels);
     void

@@ -6,10 +6,11 @@ const std::string RadosSeriesManager::RADOS_CLUSTER = "ceph";
 const std::string RadosSeriesManager::RADOS_USERNAME = "client.admin";
 const std::string RadosSeriesManager::RADOS_POOL = "tagtree";
 
-RadosSeriesManager::RadosSeriesManager(std::string_view conf,
+RadosSeriesManager::RadosSeriesManager(size_t cache_size, std::string_view conf,
                                        std::string_view cluster_name,
                                        std::string_view username,
                                        std::string_view pool)
+    : AbstractSeriesManager(cache_size)
 {
     int ret;
     uint64_t flags = 0;

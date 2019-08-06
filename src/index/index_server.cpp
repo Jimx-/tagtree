@@ -8,8 +8,9 @@ using promql::MatchOp;
 
 namespace tagtree {
 
-IndexServer::IndexServer(std::string_view index_dir, AbstractSeriesManager* sm)
-    : index_tree(index_dir)
+IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
+                         AbstractSeriesManager* sm)
+    : index_tree(index_dir, cache_size)
 {
     series_manager = sm;
 }
@@ -30,6 +31,7 @@ bool IndexServer::get_labels(const TSID& tsid,
     labels.clear();
     std::copy(entry->labels.begin(), entry->labels.end(),
               std::back_inserter(labels));
+    entry->unlock();
     return true;
 }
 
@@ -50,6 +52,8 @@ void IndexServer::label_values(const std::string& label_name,
                 break;
             }
         }
+
+        entry->unlock();
     }
 }
 

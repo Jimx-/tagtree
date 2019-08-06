@@ -16,10 +16,13 @@ namespace tagtree {
 const std::string MongoDBSeriesManager::DATABASE_NAME = "tagtree";
 const std::string MongoDBSeriesManager::COLLECTION_NAME = "series";
 
-MongoDBSeriesManager::MongoDBSeriesManager(bool create_instance,
+MongoDBSeriesManager::MongoDBSeriesManager(size_t cache_size,
+                                           bool create_instance,
                                            std::string_view uri,
                                            std::string_view database_name)
-    : client{uri == "" ? mongocxx::uri() : mongocxx::uri(uri.data())},
+    : AbstractSeriesManager(cache_size), client{uri == "" ? mongocxx::uri()
+                                                          : mongocxx::uri(
+                                                                uri.data())},
       database_name(database_name)
 {
     if (create_instance) {

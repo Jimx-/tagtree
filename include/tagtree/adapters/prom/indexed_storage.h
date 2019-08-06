@@ -10,7 +10,8 @@ namespace prom {
 
 class IndexedStorage : public promql::Storage {
 public:
-    IndexedStorage(std::string_view index_dir, tagtree::Storage* storage,
+    IndexedStorage(std::string_view index_dir, size_t cache_size,
+                   tagtree::Storage* storage,
                    tagtree::AbstractSeriesManager* sm);
     tagtree::Storage* get_storage() const { return storage; }
     IndexServer* get_index() const { return index_server.get(); }

@@ -11,7 +11,8 @@ namespace tagtree {
 
 class MongoDBSeriesManager : public AbstractSeriesManager {
 public:
-    MongoDBSeriesManager(bool create_instance = true, std::string_view url = "",
+    MongoDBSeriesManager(size_t cache_size, bool create_instance = true,
+                         std::string_view url = "",
                          std::string_view database_name = DATABASE_NAME);
 
 private:

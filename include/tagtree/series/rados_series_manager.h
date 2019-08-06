@@ -15,7 +15,7 @@ public:
 
 class RadosSeriesManager : public AbstractSeriesManager {
 public:
-    RadosSeriesManager(std::string_view conf,
+    RadosSeriesManager(size_t cache_size, std::string_view conf,
                        std::string_view cluster_name = RADOS_CLUSTER,
                        std::string_view username = RADOS_USERNAME,
                        std::string_view pool = RADOS_POOL);

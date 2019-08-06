@@ -33,8 +33,9 @@ void IndexTree::clear_key<StringKey<IndexTree::KEY_WIDTH>>(
     key = StringKey<KEY_WIDTH>();
 }
 
-IndexTree::IndexTree(std::string_view dir)
-    : page_cache(std::make_unique<bptree::HeapPageCache>(dir, true)),
+IndexTree::IndexTree(std::string_view dir, size_t cache_size)
+    : page_cache(
+          std::make_unique<bptree::HeapPageCache>(dir, true, cache_size)),
       btree(std::make_unique<BPTree>(page_cache.get()))
 {}
 
