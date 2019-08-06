@@ -22,6 +22,14 @@ if (TAGTREE_USE_MONGODB)
    message(STATUS "    libraries: ${LIBMONGOCXX_LIBRARIES}")
    include_directories(${LIBMONGOCXX_INCLUDE_DIRS})
    include_directories(${LIBBSONCXX_INCLUDE_DIRS})
+
+   set(TAGTREE_INCLUDE_DIRS
+    ${TOPDIR}/include
+    ${TOPDIR}/3rdparty/bptree/include
+    ${LIBMONGOCXX_INCLUDE_DIRS}
+    ${LIBBSONCXX_INCLUDE_DIRS}
+    PARENT_SCOPE 
+   )
 endif (TAGTREE_USE_MONGODB)
 
 include_directories(
@@ -82,15 +90,15 @@ set(LIBRARIES
 )
 
 if (TAGTREE_USE_RADOS)
-   set(LIBRARY
-    ${LIBRARY}
+   set(LIBRARIES
+    ${LIBRARIES}
     rados
    )
 endif (TAGTREE_USE_RADOS)
 
 if (TAGTREE_USE_MONGODB)
-   set(LIBRARY
-    ${LIBRARY}
+   set(LIBRARIES
+    ${LIBRARIES}
     ${LIBMONGOCXX_LIBRARIES}
    )
 endif (TAGTREE_USE_MONGODB)
