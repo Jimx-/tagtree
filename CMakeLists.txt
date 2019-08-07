@@ -4,13 +4,22 @@ project(tagtree)
 set(CMAKE_CXX_STANDARD 17)
 
 set(TOPDIR ${PROJECT_SOURCE_DIR})
+set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${TOPDIR}/cmake")
 
 option(TAGTREE_USE_RADOS "Use Ceph/RADOS via librados" OFF)
 option(TAGTREE_USE_MONGODB "Use MongoDB" OFF)
 
+# Find libuuid
+find_package(Libuuid REQUIRED)
+if (NOT LIBUUID_FOUND)
+   message(FATAL_ERROR "You might need to install libuuid first")
+endif()
+include_directories(${LIBUUID_INCLUDE_DIRS})
+
 set(TAGTREE_INCLUDE_DIRS
     ${TOPDIR}/include
     ${TOPDIR}/3rdparty/bptree/include
+    ${LIBUUID_INCLUDE_DIRS}
     PARENT_SCOPE 
 )
 
@@ -87,6 +96,7 @@ set(LIBRARIES
     pthread
     atomic
     bptree
+    ${LIBUUID_LIBRARY}
 )
 
 if (TAGTREE_USE_RADOS)
