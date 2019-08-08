@@ -35,12 +35,12 @@ public:
         return std::string(buf);
     }
 
-    void serialize(char* buf) const
+    void serialize(uint8_t* buf) const
     {
         uuid_copy(reinterpret_cast<unsigned char*>(buf), uuid);
     }
 
-    void deserialize(const char* buf)
+    void deserialize(const uint8_t* buf)
     {
         uuid_copy(uuid, reinterpret_cast<const unsigned char*>(buf));
     }

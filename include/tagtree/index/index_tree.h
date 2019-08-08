@@ -45,8 +45,9 @@ public:
 
 private:
     static const size_t NAME_BYTES = 4;
-    static const size_t VALUE_BYTES = 4;
-    static constexpr size_t KEY_WIDTH = NAME_BYTES + VALUE_BYTES;
+    static const size_t VALUE_BYTES = 3;
+    static const size_t SEGSEL_BYTES = 1;
+    static constexpr size_t KEY_WIDTH = NAME_BYTES + VALUE_BYTES + SEGSEL_BYTES;
 
     // using KeyType = KeyTypeSelector<KEY_WIDTH>::key_type;
     using KeyType = std::conditional<KEY_WIDTH <= sizeof(uint64_t), uint64_t,
@@ -57,17 +58,27 @@ private:
     std::mutex tree_mutex;
     std::unique_ptr<BPTree> btree;
 
-    void insert_posting_id(const promql::Label& label, const TSID& pid);
+    /* Create a posting page and fill in the metadata.
+     * The new page is locked when returned */
+    bptree::Page* create_posting_page(const promql::Label& label);
+    void insert_posting_id(const promql::Label& label, const TSID& tsid);
+    bool insert_first_page(const promql::Label& label, const TSID& tsid,
+                           bptree::Page* first_page);
+    void insert_new_segment(const promql::Label& label, const TSID& tsid,
+                            unsigned int segidx);
 
     void query_postings(const promql::LabelMatcher& matcher,
                         std::unordered_set<TSID>& posting_ids);
 
-    KeyType make_key(const std::string& name, const std::string& value);
+    KeyType make_key(const std::string& name, const std::string& value,
+                     unsigned int segsel);
 
     void _hash_string_name(const std::string& str, uint8_t* out);
     void _hash_string_value(const std::string& str, uint8_t* out);
+    void _hash_segsel(unsigned int segsel, uint8_t* out);
 
     template <typename K> void pack_key(const uint8_t* key_buf, K& key);
+    template <typename K> unsigned int get_segsel(const K& key);
     template <typename K> void clear_key(K& key);
 };
 

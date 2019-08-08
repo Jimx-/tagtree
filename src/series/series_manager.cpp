@@ -14,12 +14,12 @@ void AbstractSeriesManager::add(const TSID& tsid,
     auto new_entry = get_entry();
     new_entry->tsid = tsid;
     new_entry->labels = labels;
+    new_entry->dirty = true;
     auto* entryp = new_entry.get();
 
     lru_list.emplace_front(tsid, std::move(new_entry));
     series_map.emplace(tsid, lru_list.begin());
 
-    write_entry(entryp);
     entryp->unlock();
 }
 
@@ -61,6 +61,11 @@ std::unique_ptr<SeriesEntry> AbstractSeriesManager::get_entry()
         new_entry = std::make_unique<SeriesEntry>();
     } else {
         new_entry = std::move(lru_list.back().second);
+
+        if (new_entry->dirty) {
+            write_entry(new_entry.get());
+            new_entry->dirty = false;
+        }
         series_map.erase(lru_list.back().first);
         lru_list.pop_back();
     }

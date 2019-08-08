@@ -15,11 +15,13 @@ struct SeriesEntry {
     TSID tsid;
     std::vector<promql::Label> labels;
     std::mutex mutex;
+    bool dirty;
 
-    SeriesEntry(const std::vector<promql::Label>& labels = {}) : labels(labels)
+    SeriesEntry(const std::vector<promql::Label>& labels = {})
+        : labels(labels), dirty(false)
     {}
     SeriesEntry(const TSID& tsid, const std::vector<promql::Label>& labels = {})
-        : tsid(tsid), labels(labels)
+        : tsid(tsid), labels(labels), dirty(false)
     {}
 
     void lock() { mutex.lock(); }
