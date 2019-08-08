@@ -16,11 +16,10 @@ if (NOT LIBUUID_FOUND)
 endif()
 include_directories(${LIBUUID_INCLUDE_DIRS})
 
-set(TAGTREE_INCLUDE_DIRS
+set(INCLUDE_DIRS
     ${TOPDIR}/include
     ${TOPDIR}/3rdparty/bptree/include
     ${LIBUUID_INCLUDE_DIRS}
-    PARENT_SCOPE 
 )
 
 if (TAGTREE_USE_MONGODB)
@@ -32,18 +31,14 @@ if (TAGTREE_USE_MONGODB)
    include_directories(${LIBMONGOCXX_INCLUDE_DIRS})
    include_directories(${LIBBSONCXX_INCLUDE_DIRS})
 
-   set(TAGTREE_INCLUDE_DIRS
-    ${TOPDIR}/include
-    ${TOPDIR}/3rdparty/bptree/include
+   set(INCLUDE_DIRS
     ${LIBMONGOCXX_INCLUDE_DIRS}
     ${LIBBSONCXX_INCLUDE_DIRS}
-    PARENT_SCOPE 
    )
 endif (TAGTREE_USE_MONGODB)
 
 include_directories(
-    ${TOPDIR}/include
-    ${TOPDIR}/3rdparty/bptree/include
+    ${INCLUDE_DIRS}
 )
 
 set(SOURCE_FILES
@@ -115,4 +110,5 @@ endif (TAGTREE_USE_MONGODB)
 
 add_library(tagtree STATIC ${SOURCE_FILES} ${HEADER_FILES} ${EXT_SOURCE_FILES})
 target_link_libraries(tagtree ${LIBRARIES})
+target_include_directories(tagtree PUBLIC ${INCLUDE_DIRS})
 install(TARGETS tagtree DESTINATION lib)
