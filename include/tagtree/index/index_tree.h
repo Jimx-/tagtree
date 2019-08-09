@@ -52,7 +52,7 @@ private:
     // using KeyType = KeyTypeSelector<KEY_WIDTH>::key_type;
     using KeyType = std::conditional<KEY_WIDTH <= sizeof(uint64_t), uint64_t,
                                      StringKey<KEY_WIDTH>>::type;
-    using BPTree = bptree::BTree<200, KeyType, bptree::PageID>;
+    using BPTree = bptree::BTree<255, KeyType, bptree::PageID>;
 
     std::unique_ptr<bptree::AbstractPageCache> page_cache;
     std::mutex tree_mutex;

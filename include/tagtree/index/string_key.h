@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <ostream>
 
 namespace tagtree {
 
@@ -13,6 +14,8 @@ template <size_t N> class StringKey {
 public:
     StringKey() { memset(buffer.begin(), 0, N); }
     StringKey(const uint8_t* buf) { memcpy(buffer.begin(), buf, N); }
+
+    void get_bytes(uint8_t* buf) const { memcpy(buf, buffer.begin(), N); }
 
     bool operator==(const StringKey<N>& rhs) const
     {
@@ -32,6 +35,7 @@ public:
     }
 
     bool operator>=(const StringKey<N>& rhs) const { return !(*this < rhs); }
+    bool operator<=(const StringKey<N>& rhs) const { return !(*this > rhs); }
 
     StringKey<N> operator+(const StringKey<N>& rhs) const
     {
@@ -57,6 +61,11 @@ public:
         }
 
         return result;
+    }
+
+    friend std::ostream& operator<<(std::ostream& out, const StringKey& k)
+    {
+        return out;
     }
 
 private:

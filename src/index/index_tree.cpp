@@ -35,7 +35,15 @@ template <>
 unsigned int IndexTree::get_segsel<StringKey<IndexTree::KEY_WIDTH>>(
     const StringKey<IndexTree::KEY_WIDTH>& key)
 {
-    return 0;
+    unsigned int segsel = 0;
+    uint8_t buf[IndexTree::KEY_WIDTH];
+    key.get_bytes(buf);
+
+    for (int i = SEGSEL_BYTES - 1; i >= 0; i--) {
+        segsel |= (buf[IndexTree::KEY_WIDTH - 1 - i] << (i << 3));
+    }
+
+    return segsel;
 }
 
 template <> void IndexTree::clear_key<uint64_t>(uint64_t& key) { key = 0; }
