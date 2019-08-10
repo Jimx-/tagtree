@@ -1,10 +1,15 @@
 #ifndef _TAGTREE_INDEX_TREE_H_
 #define _TAGTREE_INDEX_TREE_H_
 
+#ifdef _TAGTREE_USE_AVX2_
+#include "tagtree/index/string_key_avx.h"
+#else
+#include "tagtree/index/string_key.h"
+#endif
+
 #include "bptree/page_cache.h"
 #include "bptree/tree.h"
 #include "promql/labels.h"
-#include "tagtree/index/string_key.h"
 #include "tagtree/series/series_manager.h"
 #include "tagtree/tsid.h"
 
@@ -45,14 +50,14 @@ public:
 
 private:
     static const size_t NAME_BYTES = 4;
-    static const size_t VALUE_BYTES = 3;
-    static const size_t SEGSEL_BYTES = 1;
+    static const size_t VALUE_BYTES = 6;
+    static const size_t SEGSEL_BYTES = 2;
     static constexpr size_t KEY_WIDTH = NAME_BYTES + VALUE_BYTES + SEGSEL_BYTES;
 
     // using KeyType = KeyTypeSelector<KEY_WIDTH>::key_type;
     using KeyType = std::conditional<KEY_WIDTH <= sizeof(uint64_t), uint64_t,
                                      StringKey<KEY_WIDTH>>::type;
-    using BPTree = bptree::BTree<255, KeyType, bptree::PageID>;
+    using BPTree = bptree::BTree<200, KeyType, bptree::PageID>;
 
     std::unique_ptr<bptree::AbstractPageCache> page_cache;
     std::mutex tree_mutex;

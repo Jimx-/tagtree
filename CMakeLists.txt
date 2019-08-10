@@ -8,6 +8,14 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${TOPDIR}/cmake")
 
 option(TAGTREE_USE_RADOS "Use Ceph/RADOS via librados" OFF)
 option(TAGTREE_USE_MONGODB "Use MongoDB" OFF)
+option(TAGTREE_USE_AVX2 "Enable AVX2 optimizations" ON)
+
+include(FindSSE)
+if (TAGTREE_USE_AVX2 AND AVX2_FOUND)
+   message(STATUS "AVX2 optimizations enabled")
+   add_compile_options(-mavx2)
+   add_definitions(-D_TAGTREE_USE_AVX2_)
+endif (TAGTREE_USE_AVX2 AND AVX2_FOUND)
 
 # Find libuuid
 find_package(Libuuid REQUIRED)
