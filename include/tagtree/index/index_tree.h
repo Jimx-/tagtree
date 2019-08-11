@@ -65,10 +65,12 @@ private:
 
     /* Create a posting page and fill in the metadata.
      * The new page is locked when returned */
-    bptree::Page* create_posting_page(const promql::Label& label);
+    bptree::Page* create_posting_page(const promql::Label& label,
+                                      boost::upgrade_lock<bptree::Page>& lock);
     void insert_posting_id(const promql::Label& label, const TSID& tsid);
     bool insert_first_page(const promql::Label& label, const TSID& tsid,
-                           bptree::Page* first_page);
+                           bptree::Page* first_page,
+                           boost::upgrade_lock<bptree::Page>& first_page_lock);
     void insert_new_segment(const promql::Label& label, const TSID& tsid,
                             unsigned int segidx);
 

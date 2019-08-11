@@ -217,8 +217,9 @@ void IndexTree::query_postings(const promql::LabelMatcher& matcher,
 
         unsigned int segsel = get_segsel(it->first);
         auto page_id = it->second;
-        auto page = page_cache->fetch_page(page_id);
-        const uint8_t* p = page->get_buffer_locked();
+        boost::upgrade_lock<bptree::Page> lock;
+        auto page = page_cache->fetch_page(page_id, lock);
+        const uint8_t* p = page->get_buffer(lock);
 
         if (segsel == 0) {
             /* first page, skip the segment count */
@@ -230,8 +231,7 @@ void IndexTree::query_postings(const promql::LabelMatcher& matcher,
         p += read_page_metadata(p, label, num_postings);
 
         if (!matcher.match(label)) {
-            page_cache->unpin_page(page, false);
-            page->unlock();
+            page_cache->unpin_page(page, false, lock);
             it++;
             continue;
         }
@@ -243,9 +243,7 @@ void IndexTree::query_postings(const promql::LabelMatcher& matcher,
             p += sizeof(TSID);
         }
 
-        page_cache->unpin_page(page, false);
-        page->unlock();
-
+        page_cache->unpin_page(page, false, lock);
         it++;
     }
 
@@ -292,10 +290,13 @@ void IndexTree::add_series(const TSID& tsid,
     }
 }
 
-bptree::Page* IndexTree::create_posting_page(const promql::Label& label)
+bptree::Page*
+IndexTree::create_posting_page(const promql::Label& label,
+                               boost::upgrade_lock<bptree::Page>& lock)
 {
-    auto page = page_cache->new_page();
-    uint8_t* buf = page->get_buffer_locked();
+    auto page = page_cache->new_page(lock);
+    boost::upgrade_to_unique_lock<bptree::Page> ulock(lock);
+    uint8_t* buf = page->get_buffer(ulock);
 
     memset(buf, 0, page->get_size());
     *(uint32_t*)buf = (uint32_t)1;
@@ -309,130 +310,148 @@ void IndexTree::insert_posting_id(const promql::Label& label, const TSID& tsid)
 {
     /* lookup the first page for the label */
     bptree::Page* first_page = nullptr;
-    auto first_key = make_key(label.name, label.value, 0);
-    std::vector<bptree::PageID> first_page_ids;
-    btree->get_value(first_key, first_page_ids);
+    boost::upgrade_lock<bptree::Page> first_page_lock;
 
-    /* create page if no page is found*/
-    if (first_page_ids.empty()) {
-        first_page = create_posting_page(label);
-        btree->insert(first_key, first_page->get_id());
-    }
+    {
+        std::lock_guard<std::mutex> guard(
+            tree_mutex); // hold this lock until we obtain lock on the first
+                         // page
 
-    /* find the real first page from probably multiple candidate pages */
-    if (!first_page) {
-        for (auto&& pid : first_page_ids) {
-            auto page = page_cache->fetch_page(pid);
-            assert(page != nullptr);
+        auto first_key = make_key(label.name, label.value, 0);
+        std::vector<bptree::PageID> first_page_ids;
+        btree->get_value(first_key, first_page_ids);
 
-            const uint8_t* buf = page->get_buffer_locked();
-            size_t num_postings;
-            promql::Label page_label;
+        /* create page if no page is found*/
+        if (first_page_ids.empty()) {
+            first_page = create_posting_page(label, first_page_lock);
+            btree->insert(first_key, first_page->get_id());
+        }
 
-            buf += sizeof(uint32_t); // skip the segment count
-            read_page_metadata(buf, page_label, num_postings);
+        /* find the real first page from probably multiple candidate pages */
+        if (!first_page) {
+            for (auto&& pid : first_page_ids) {
+                boost::upgrade_lock<bptree::Page> plock;
+                auto page = page_cache->fetch_page(pid, plock);
+                assert(page != nullptr);
 
-            if (page_label.name != label.name ||
-                page_label.value != label.value) {
-                page_cache->unpin_page(page, false);
-                page->unlock();
-                continue;
+                const uint8_t* buf = page->get_buffer(plock);
+                size_t num_postings;
+                promql::Label page_label;
+
+                buf += sizeof(uint32_t); // skip the segment count
+                read_page_metadata(buf, page_label, num_postings);
+
+                if (page_label.name != label.name ||
+                    page_label.value != label.value) {
+                    page_cache->unpin_page(page, false, plock);
+                    continue;
+                }
+
+                first_page = page;
+                first_page_lock = std::move(plock);
+                break;
             }
+        }
 
-            first_page = page;
-            break;
+        if (!first_page) {
+            first_page = create_posting_page(label, first_page_lock);
+            btree->insert(first_key, first_page->get_id());
         }
     }
 
-    if (!first_page) {
-        first_page = create_posting_page(label);
-        btree->insert(first_key, first_page->get_id());
-    }
+    bool dirty = insert_first_page(label, tsid, first_page, first_page_lock);
 
-    bool dirty = insert_first_page(label, tsid, first_page);
-
-    page_cache->unpin_page(first_page, dirty);
-    first_page->unlock();
+    page_cache->unpin_page(first_page, dirty, first_page_lock);
+    // read lock of the first page goes out of scope
 }
 
-bool IndexTree::insert_first_page(const promql::Label& label, const TSID& tsid,
-                                  bptree::Page* first_page)
+bool IndexTree::insert_first_page(
+    const promql::Label& label, const TSID& tsid, bptree::Page* first_page,
+    boost::upgrade_lock<bptree::Page>& first_page_lock)
 {
-    uint8_t* first_page_buf = first_page->get_buffer_locked();
+    boost::upgrade_to_unique_lock<bptree::Page> first_page_ulock(
+        first_page_lock); // a new segment will be created if the last segment
+                          // overflows so upgrade to write lock before we read
+                          // the number of segments
+
+    uint8_t* first_page_buf = first_page->get_buffer(first_page_ulock);
     unsigned int num_segments = *(uint32_t*)first_page_buf;
-    uint8_t *buffer_start, *uuid_list_start;
     size_t num_postings;
-    uint32_t* num_postings_pos;
+    size_t meta_offset = sizeof(uint32_t);
     bptree::Page* last_page = nullptr;
 
-    if (num_segments == 1) {
-        buffer_start = first_page_buf;
-        uint8_t* p = first_page_buf + sizeof(uint32_t);
-        num_postings_pos = (uint32_t*)p + 2;
-        promql::Label tmp;
-        uuid_list_start = p + read_page_metadata(p, tmp, num_postings);
-    } else {
-        /* read the last segment */
-        auto last_key = make_key(label.name, label.value, num_segments - 1);
-        std::vector<bptree::PageID> last_page_ids;
-        btree->get_value(last_key, last_page_ids);
+    {
+        boost::upgrade_lock<bptree::Page> last_segment_lock;
 
-        for (auto&& pid : last_page_ids) {
-            auto page = page_cache->fetch_page(pid);
-            assert(page != nullptr);
+        if (num_segments > 1) {
+            /* read the last segment */
+            boost::upgrade_lock<bptree::Page> segment_lock;
+            auto last_key = make_key(label.name, label.value, num_segments - 1);
+            std::vector<bptree::PageID> last_page_ids;
+            btree->get_value(last_key, last_page_ids);
 
-            const uint8_t* buf = page->get_buffer_locked();
-            size_t num_postings;
-            promql::Label page_label;
+            for (auto&& pid : last_page_ids) {
+                auto page = page_cache->fetch_page(pid, segment_lock);
+                assert(page != nullptr);
 
-            read_page_metadata(buf, page_label, num_postings);
+                const uint8_t* buf = page->get_buffer(segment_lock);
+                size_t num_postings;
+                promql::Label page_label;
 
-            if (page_label.name != label.name ||
-                page_label.value != label.value) {
-                page_cache->unpin_page(page, false);
-                page->unlock();
-                continue;
+                read_page_metadata(buf, page_label, num_postings);
+
+                if (page_label.name != label.name ||
+                    page_label.value != label.value) {
+                    page_cache->unpin_page(page, false, segment_lock);
+                    continue;
+                }
+
+                last_page = page;
+                last_segment_lock = std::move(segment_lock);
+                break;
             }
 
-            last_page = page;
-            break;
+            if (!last_page) {
+                first_page_ulock.~upgrade_to_unique_lock();
+                page_cache->unpin_page(first_page, false, first_page_lock);
+                throw std::runtime_error(
+                    "failed to find the last segment page");
+            }
+
+            meta_offset = 0;
         }
 
-        if (!last_page) {
-            page_cache->unpin_page(first_page, false);
-            first_page->unlock();
-            throw std::runtime_error("failed to find the last segment page");
-        }
+        {
+            boost::upgrade_to_unique_lock<bptree::Page> ulock(
+                last_page ? std::move(boost::upgrade_to_unique_lock(
+                                last_segment_lock))
+                          : std::move(first_page_ulock));
+            uint8_t* buffer_start =
+                (last_page ? last_page : first_page)->get_buffer(ulock);
+            uint8_t* meta_start = buffer_start + meta_offset;
+            uint32_t* num_postings_pos = (uint32_t*)meta_start + 2;
+            promql::Label tmp;
+            uint8_t* uuid_list_start =
+                meta_start + read_page_metadata(meta_start, tmp, num_postings);
 
-        buffer_start = last_page->get_buffer_locked();
-        num_postings_pos = (uint32_t*)buffer_start + 2;
-        promql::Label tmp;
-        uuid_list_start =
-            buffer_start + read_page_metadata(buffer_start, tmp, num_postings);
-    }
+            uint8_t* new_uuid_pos =
+                uuid_list_start + sizeof(TSID) * num_postings;
+            bool overflow = new_uuid_pos + sizeof(TSID) - buffer_start >=
+                            first_page->get_size();
 
-    uint8_t* new_uuid_pos = uuid_list_start + sizeof(TSID) * num_postings;
-    bool overflow =
-        new_uuid_pos + sizeof(TSID) - buffer_start >= first_page->get_size();
+            if (overflow) {
+                insert_new_segment(label, tsid, num_segments);
+                *(uint32_t*)first_page_buf = num_segments + 1;
+            } else {
+                tsid.serialize(new_uuid_pos);
+                *num_postings_pos = num_postings + 1;
+            }
+        } // write lock goes out of scope
 
-    if (overflow) {
         if (last_page) {
-            page_cache->unpin_page(last_page, false);
-            last_page->unlock();
+            page_cache->unpin_page(last_page, true, last_segment_lock);
         }
-
-        insert_new_segment(label, tsid, num_segments);
-        *(uint32_t*)first_page_buf = num_segments + 1;
-        return true;
-    }
-
-    tsid.serialize(new_uuid_pos);
-    *num_postings_pos = num_postings + 1;
-
-    if (last_page) {
-        page_cache->unpin_page(last_page, true);
-        last_page->unlock();
-    }
+    } // read lock of the last segment goes out of scope
 
     return !last_page;
 }
@@ -440,16 +459,20 @@ bool IndexTree::insert_first_page(const promql::Label& label, const TSID& tsid,
 void IndexTree::insert_new_segment(const promql::Label& label, const TSID& tsid,
                                    unsigned int segidx)
 {
-    auto page = page_cache->new_page();
+    boost::upgrade_lock<bptree::Page> lock;
+    auto page = page_cache->new_page(lock);
     auto key = make_key(label.name, label.value, segidx);
-    uint8_t* buf = page->get_buffer_locked();
 
-    memset(buf, 0, page->get_size());
-    buf += write_page_metadata(buf, label, 1);
-    tsid.serialize(buf);
+    {
+        boost::upgrade_to_unique_lock<bptree::Page> ulock(lock);
+        uint8_t* buf = page->get_buffer(ulock);
 
-    page_cache->unpin_page(page, true);
-    page->unlock();
+        memset(buf, 0, page->get_size());
+        buf += write_page_metadata(buf, label, 1);
+        tsid.serialize(buf);
+    }
+
+    page_cache->unpin_page(page, true, lock);
     btree->insert(key, page->get_id());
 }
 
