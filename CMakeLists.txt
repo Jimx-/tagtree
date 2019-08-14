@@ -55,7 +55,9 @@ set(SOURCE_FILES
     ${TOPDIR}/src/adapters/prom/querier.cpp
     ${TOPDIR}/src/index/index_server.cpp
     ${TOPDIR}/src/index/index_tree.cpp
+    ${TOPDIR}/src/series/btree_series_manager.cpp
     ${TOPDIR}/src/series/series_manager.cpp
+    ${TOPDIR}/src/series/symbol_table.cpp
 )
            
 set(HEADER_FILES
@@ -66,7 +68,9 @@ set(HEADER_FILES
     ${TOPDIR}/include/tagtree/adapters/prom/querier.h
     ${TOPDIR}/include/tagtree/index/index_server.h
     ${TOPDIR}/include/tagtree/index/index_tree.h
+    ${TOPDIR}/include/tagtree/series/btree_series_manager.h
     ${TOPDIR}/include/tagtree/series/series_manager.h
+    ${TOPDIR}/include/tagtree/series/symbol_table.h
 )
 
 if (TAGTREE_USE_RADOS)

@@ -3,7 +3,7 @@
 namespace tagtree {
 
 AbstractSeriesManager::AbstractSeriesManager(size_t cache_size)
-    : max_entries(cache_size)
+    : max_entries(cache_size), symtab("symbol.tab")
 {}
 
 void AbstractSeriesManager::add(const TSID& tsid,
@@ -20,6 +20,11 @@ void AbstractSeriesManager::add(const TSID& tsid,
     lru_list.emplace_front(tsid, std::move(new_entry));
     series_map.emplace(tsid, lru_list.begin());
 
+    RefSeriesEntry rsent;
+    sent_to_rsent(entryp, &rsent);
+    write_entry(&rsent);
+    entryp->dirty = false;
+
     entryp->unlock();
 }
 
@@ -29,16 +34,15 @@ SeriesEntry* AbstractSeriesManager::get(const TSID& tsid)
 
     auto it = series_map.find(tsid);
     if (it == series_map.end()) {
-        SeriesEntry entry;
-        entry.tsid = tsid;
-        if (!read_entry(&entry)) {
+        RefSeriesEntry rsent;
+        rsent.tsid = tsid;
+        if (!read_entry(&rsent)) {
             return nullptr;
         }
 
         auto new_entry = get_entry();
-        new_entry->tsid = tsid;
-        new_entry->labels = std::move(entry.labels);
         auto* entryp = new_entry.get();
+        rsent_to_sent(&rsent, entryp);
 
         lru_list.emplace_front(tsid, std::move(new_entry));
         series_map.emplace(tsid, lru_list.begin());
@@ -63,7 +67,9 @@ std::unique_ptr<SeriesEntry> AbstractSeriesManager::get_entry()
         new_entry = std::move(lru_list.back().second);
 
         if (new_entry->dirty) {
-            write_entry(new_entry.get());
+            RefSeriesEntry rsent;
+            sent_to_rsent(new_entry.get(), &rsent);
+            write_entry(&rsent);
             new_entry->dirty = false;
         }
         series_map.erase(lru_list.back().first);
@@ -74,6 +80,31 @@ std::unique_ptr<SeriesEntry> AbstractSeriesManager::get_entry()
     new_entry->labels.clear();
 
     return new_entry;
+}
+
+void AbstractSeriesManager::sent_to_rsent(SeriesEntry* sent,
+                                          RefSeriesEntry* rsent)
+{
+    rsent->tsid = sent->tsid;
+    rsent->labels.clear();
+    for (auto&& p : sent->labels) {
+        SymbolTable::Ref name_ref, value_ref;
+        name_ref = symtab.add_symbol(p.name);
+        value_ref = symtab.add_symbol(p.value);
+        rsent->labels.emplace_back(name_ref, value_ref);
+    }
+}
+
+void AbstractSeriesManager::rsent_to_sent(RefSeriesEntry* rsent,
+                                          SeriesEntry* sent)
+{
+    sent->tsid = rsent->tsid;
+    sent->labels.clear();
+    for (auto&& p : rsent->labels) {
+        const auto& name = symtab.get_symbol(p.first);
+        const auto& value = symtab.get_symbol(p.second);
+        sent->labels.emplace_back(name, value);
+    }
 }
 
 } // namespace tagtree

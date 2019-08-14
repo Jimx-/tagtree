@@ -27,6 +27,21 @@ public:
         return uuid_compare(uuid, rhs.uuid) < 0;
     }
 
+    bool operator<=(const TSID& rhs) const
+    {
+        return uuid_compare(uuid, rhs.uuid) <= 0;
+    }
+
+    bool operator>(const TSID& rhs) const
+    {
+        return uuid_compare(uuid, rhs.uuid) > 0;
+    }
+
+    bool operator>=(const TSID& rhs) const
+    {
+        return uuid_compare(uuid, rhs.uuid) >= 0;
+    }
+
     std::string to_string() const
     {
         char buf[36];
@@ -43,6 +58,12 @@ public:
     void deserialize(const uint8_t* buf)
     {
         uuid_copy(uuid, reinterpret_cast<const unsigned char*>(buf));
+    }
+
+    friend std::ostream& operator<<(std::ostream& out, const TSID& tsid)
+    {
+        out << tsid.to_string();
+        return out;
     }
 
 private:

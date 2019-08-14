@@ -15,37 +15,33 @@ template <size_t N> class StringKey {
     friend class std::hash<StringKey<N>>;
 
 public:
-    StringKey() { m128 = _mm_setzero_si128(); }
-    StringKey(const uint8_t* buf)
+    StringKey() { ::memset(buf, 0, 16); }
+    StringKey(const uint8_t* data)
     {
-        uint8_t __buf[16] __attribute__((aligned(16)));
-        ::memset(__buf, 0, 16);
-        ::memcpy(__buf, buf, N);
-        m128 = _mm_loadu_si128((__m128i*)buf);
+        ::memset(buf, 0, 16);
+        ::memcpy(buf, data, N);
     }
 
-    void get_bytes(uint8_t* buf) const
-    {
-        uint8_t __buf[16] __attribute__((aligned(16)));
-        _mm_storeu_si128((__m128i*)__buf, m128);
-        ::memcpy(buf, __buf, N);
-    }
+    void get_bytes(uint8_t* data) const { ::memcpy(data, buf, N); }
 
     bool operator==(const StringKey<N>& rhs) const
     {
-        return _mm_test_all_ones(_mm_cmpeq_epi8(m128, rhs.m128));
+        __m128i a, b;
+        a = _mm_loadu_si128((__m128i*)buf);
+        b = _mm_loadu_si128((__m128i*)rhs.buf);
+        return _mm_test_all_ones(_mm_cmpeq_epi8(a, b));
     }
 
     bool operator!=(const StringKey<N>& rhs) const { return !(*this == rhs); }
 
     bool operator<(const StringKey<N>& rhs) const
     {
-        return memcmp(&m128, &rhs.m128, N) < 0;
+        return memcmp(&buf, &rhs.buf, N) < 0;
     }
 
     bool operator>(const StringKey<N>& rhs) const
     {
-        return memcmp(&m128, &rhs.m128, N) > 0;
+        return memcmp(&buf, &rhs.buf, N) > 0;
     }
 
     bool operator>=(const StringKey<N>& rhs) const { return !(*this < rhs); }
@@ -54,7 +50,11 @@ public:
     StringKey<N> operator+(const StringKey<N>& rhs) const
     {
         StringKey<N> result;
-        result.m128 = _mm_adds_epu8(m128, rhs.m128);
+        __m128i a, b, c;
+        a = _mm_loadu_si128((__m128i*)buf);
+        b = _mm_loadu_si128((__m128i*)rhs.buf);
+        c = _mm_adds_epu8(a, b);
+        _mm_storeu_si128((__m128i*)result.buf, c);
 
         return result;
     }
@@ -62,7 +62,11 @@ public:
     StringKey<N> operator&(const StringKey<N>& rhs) const
     {
         StringKey<N> result;
-        result.m128 = _mm_and_si128(m128, rhs.m128);
+        __m128i a, b, c;
+        a = _mm_loadu_si128((__m128i*)buf);
+        b = _mm_loadu_si128((__m128i*)rhs.buf);
+        c = _mm_and_si128(a, b);
+        _mm_storeu_si128((__m128i*)result.buf, c);
 
         return result;
     }
@@ -73,7 +77,7 @@ public:
     }
 
 private:
-    __m128i m128;
+    uint8_t buf[16];
 };
 
 } // namespace tagtree
@@ -85,7 +89,7 @@ public:
     size_t operator()(const tagtree::StringKey<N>& sk) const
     {
         size_t h1 = std::hash<std::string>()(
-            std::string(reinterpret_cast<const char*>(&sk.m128), N));
+            std::string(reinterpret_cast<const char*>(&sk.buf), N));
         return h1;
     }
 };
