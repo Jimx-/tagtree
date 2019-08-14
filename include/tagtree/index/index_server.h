@@ -14,6 +14,8 @@ public:
     IndexServer(std::string_view index_dir, size_t cache_size,
                 AbstractSeriesManager* sm);
 
+    AbstractSeriesManager* get_series_manager() const { return series_manager; }
+
     inline void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
                            std::unordered_set<TSID>& tsids)

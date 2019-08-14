@@ -2,6 +2,7 @@
 #include "bptree/heap_page_cache.h"
 #include "bptree/mem_page_cache.h"
 #include "tagtree/index/index_server.h"
+#include "tagtree/series/series_manager.h"
 
 #include <cassert>
 #include <iomanip>
@@ -54,51 +55,10 @@ void IndexTree::clear_key<StringKey<IndexTree::KEY_WIDTH>>(
     key = StringKey<KEY_WIDTH>();
 }
 
-static size_t read_page_metadata(const uint8_t* buf, promql::Label& label,
-                                 size_t& num_postings)
-{
-    const uint8_t* start = buf;
-
-    uint32_t name_len = *(uint32_t*)buf;
-    buf += sizeof(uint32_t);
-    uint32_t value_len = *(uint32_t*)buf;
-    buf += sizeof(uint32_t);
-    num_postings = (size_t)(*(uint32_t*)buf);
-    buf += sizeof(uint32_t);
-
-    std::string name(buf, buf + name_len);
-    buf += name_len;
-    std::string value(buf, buf + value_len);
-    buf += value_len;
-
-    label.name = std::move(name);
-    label.value = std::move(value);
-
-    return buf - start;
-}
-
-static size_t write_page_metadata(uint8_t* buf, const promql::Label& label,
-                                  size_t num_postings)
-{
-    uint8_t* start = buf;
-
-    *(uint32_t*)buf = (uint32_t)label.name.length();
-    buf += sizeof(uint32_t);
-    *(uint32_t*)buf = (uint32_t)label.value.length();
-    buf += sizeof(uint32_t);
-    *(uint32_t*)buf = (uint32_t)num_postings;
-    buf += sizeof(uint32_t);
-    ::memcpy(buf, label.name.c_str(), label.name.length());
-    buf += label.name.length();
-    ::memcpy(buf, label.value.c_str(), label.value.length());
-    buf += label.value.length();
-
-    return buf - start;
-}
-
-IndexTree::IndexTree(std::string_view dir, size_t cache_size)
-    : page_cache(
-          std::make_unique<bptree::HeapPageCache>(dir, true, cache_size)),
+IndexTree::IndexTree(IndexServer* server, std::string_view dir,
+                     size_t cache_size)
+    : server(server), page_cache(std::make_unique<bptree::HeapPageCache>(
+                          dir, true, cache_size)),
       btree(std::make_unique<BPTree>(page_cache.get()))
 {}
 
@@ -288,6 +248,43 @@ void IndexTree::add_series(const TSID& tsid,
     for (auto&& label : labels) {
         insert_posting_id(label, tsid);
     }
+}
+
+size_t IndexTree::read_page_metadata(const uint8_t* buf, promql::Label& label,
+                                     size_t& num_postings)
+{
+    const uint8_t* start = buf;
+    auto* sm = server->get_series_manager();
+
+    uint32_t name_ref = *(uint32_t*)buf;
+    buf += sizeof(uint32_t);
+    uint32_t value_ref = *(uint32_t*)buf;
+    buf += sizeof(uint32_t);
+    num_postings = (size_t)(*(uint32_t*)buf);
+    buf += sizeof(uint32_t);
+
+    label.name = sm->get_symbol(name_ref);
+    label.value = sm->get_symbol(value_ref);
+
+    return buf - start;
+}
+
+size_t IndexTree::write_page_metadata(uint8_t* buf, const promql::Label& label,
+                                      size_t num_postings)
+{
+    uint8_t* start = buf;
+    auto* sm = server->get_series_manager();
+    auto name_ref = sm->add_symbol(label.name);
+    auto value_ref = sm->add_symbol(label.value);
+
+    *(uint32_t*)buf = (uint32_t)name_ref;
+    buf += sizeof(uint32_t);
+    *(uint32_t*)buf = (uint32_t)value_ref;
+    buf += sizeof(uint32_t);
+    *(uint32_t*)buf = (uint32_t)num_postings;
+    buf += sizeof(uint32_t);
+
+    return buf - start;
 }
 
 bptree::Page*

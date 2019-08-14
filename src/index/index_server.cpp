@@ -10,7 +10,7 @@ namespace tagtree {
 
 IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
                          AbstractSeriesManager* sm)
-    : index_tree(index_dir, cache_size)
+    : index_tree(this, index_dir, cache_size)
 {
     series_manager = sm;
 }

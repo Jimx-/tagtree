@@ -41,6 +41,15 @@ public:
     void add(const TSID& tsid, const std::vector<promql::Label>& labels);
     SeriesEntry* get(const TSID& tsid);
 
+    SymbolTable::Ref add_symbol(std::string_view symbol)
+    {
+        return symtab.add_symbol(symbol);
+    }
+    const std::string& get_symbol(SymbolTable::Ref ref)
+    {
+        return symtab.get_symbol(ref);
+    }
+
 protected:
     virtual bool read_entry(RefSeriesEntry* entry) = 0;
     virtual void write_entry(RefSeriesEntry* entry) = 0;

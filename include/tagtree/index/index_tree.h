@@ -41,7 +41,7 @@ struct KeyTypeSelector<
 
 class IndexTree {
 public:
-    IndexTree(std::string_view dir, size_t cache_size);
+    IndexTree(IndexServer* server, std::string_view dir, size_t cache_size);
 
     void add_series(const TSID& tsid, const std::vector<promql::Label>& labels);
     void
@@ -59,9 +59,15 @@ private:
                                      StringKey<KEY_WIDTH>>::type;
     using BPTree = bptree::BTree<200, KeyType, bptree::PageID>;
 
+    IndexServer* server;
     std::unique_ptr<bptree::AbstractPageCache> page_cache;
     std::mutex tree_mutex;
     std::unique_ptr<BPTree> btree;
+
+    size_t read_page_metadata(const uint8_t* buf, promql::Label& label,
+                              size_t& num_postings);
+    size_t write_page_metadata(uint8_t* buf, const promql::Label& label,
+                               size_t num_postings);
 
     /* Create a posting page and fill in the metadata.
      * The new page is locked when returned */
