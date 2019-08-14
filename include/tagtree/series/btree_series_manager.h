@@ -14,6 +14,8 @@ public:
     BTreeSeriesManager(size_t cache_size, std::string_view filename,
                        std::string_view index_file);
 
+    virtual size_t get_size() const { return btree->size(); }
+
 private:
     static const uint32_t MAGIC = 0x54534553;
     int fd;

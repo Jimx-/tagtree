@@ -13,18 +13,20 @@ IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
     : index_tree(this, index_dir, cache_size)
 {
     series_manager = sm;
+    id_counter.store(sm->get_size() + 1);
 }
+
+IndexServer::~IndexServer() {}
 
 TSID IndexServer::add_series(const std::vector<promql::Label>& labels)
 {
-    TSID new_id;
+    TSID new_id = get_tsid();
     index_tree.add_series(new_id, labels);
     series_manager->add(new_id, labels);
     return new_id;
 }
 
-bool IndexServer::get_labels(const TSID& tsid,
-                             std::vector<promql::Label>& labels)
+bool IndexServer::get_labels(TSID tsid, std::vector<promql::Label>& labels)
 {
     auto* entry = series_manager->get(tsid);
     if (!entry) return false;

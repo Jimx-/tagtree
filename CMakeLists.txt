@@ -73,28 +73,6 @@ set(HEADER_FILES
     ${TOPDIR}/include/tagtree/series/symbol_table.h
 )
 
-if (TAGTREE_USE_RADOS)
-   set(SOURCE_FILES
-    ${SOURCE_FILES}
-    ${TOPDIR}/src/series/rados_series_manager.cpp
-   )
-   set(HEADER_FILES
-    ${HEADER_FILES}
-    ${TOPDIR}/include/tagtree/series/rados_series_manager.h
-   )
-endif (TAGTREE_USE_RADOS)
-
-if (TAGTREE_USE_MONGODB)
-set(SOURCE_FILES
-    ${SOURCE_FILES}
-    ${TOPDIR}/src/series/mongodb_series_manager.cpp
-   )
-   set(HEADER_FILES
-    ${HEADER_FILES}
-    ${TOPDIR}/include/tagtree/series/mongodb_series_manager.h
-   )
-endif (TAGTREE_USE_MONGODB)
-
 set(EXT_SOURCE_FILES )
 
 add_subdirectory(${TOPDIR}/3rdparty/bptree)

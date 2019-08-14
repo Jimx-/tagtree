@@ -197,8 +197,7 @@ void IndexTree::query_postings(const promql::LabelMatcher& matcher,
         }
 
         while (num_postings--) {
-            TSID tsid;
-            tsid.deserialize(p);
+            TSID tsid = *(TSID*)p;
             postings.insert(tsid);
             p += sizeof(TSID);
         }
@@ -242,8 +241,7 @@ void IndexTree::resolve_label_matchers(
     }
 }
 
-void IndexTree::add_series(const TSID& tsid,
-                           const std::vector<promql::Label>& labels)
+void IndexTree::add_series(TSID tsid, const std::vector<promql::Label>& labels)
 {
     for (auto&& label : labels) {
         insert_posting_id(label, tsid);
@@ -303,7 +301,7 @@ IndexTree::create_posting_page(const promql::Label& label,
     return page;
 }
 
-void IndexTree::insert_posting_id(const promql::Label& label, const TSID& tsid)
+void IndexTree::insert_posting_id(const promql::Label& label, TSID tsid)
 {
     /* lookup the first page for the label */
     bptree::Page* first_page = nullptr;
@@ -363,7 +361,7 @@ void IndexTree::insert_posting_id(const promql::Label& label, const TSID& tsid)
 }
 
 bool IndexTree::insert_first_page(
-    const promql::Label& label, const TSID& tsid, bptree::Page* first_page,
+    const promql::Label& label, TSID tsid, bptree::Page* first_page,
     boost::upgrade_lock<bptree::Page>& first_page_lock)
 {
     boost::upgrade_to_unique_lock<bptree::Page> first_page_ulock(
@@ -440,7 +438,7 @@ bool IndexTree::insert_first_page(
                 insert_new_segment(label, tsid, num_segments);
                 *(uint32_t*)first_page_buf = num_segments + 1;
             } else {
-                tsid.serialize(new_uuid_pos);
+                *(TSID*)new_uuid_pos = tsid;
                 *num_postings_pos = num_postings + 1;
             }
         } // write lock goes out of scope
@@ -453,7 +451,7 @@ bool IndexTree::insert_first_page(
     return !last_page;
 }
 
-void IndexTree::insert_new_segment(const promql::Label& label, const TSID& tsid,
+void IndexTree::insert_new_segment(const promql::Label& label, TSID tsid,
                                    unsigned int segidx)
 {
     boost::upgrade_lock<bptree::Page> lock;
@@ -466,7 +464,7 @@ void IndexTree::insert_new_segment(const promql::Label& label, const TSID& tsid,
 
         memset(buf, 0, page->get_size());
         buf += write_page_metadata(buf, label, 1);
-        tsid.serialize(buf);
+        *(TSID*)buf = tsid;
     }
 
     page_cache->unpin_page(page, true, lock);

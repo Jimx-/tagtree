@@ -6,7 +6,7 @@ AbstractSeriesManager::AbstractSeriesManager(size_t cache_size)
     : max_entries(cache_size), symtab("symbol.tab")
 {}
 
-void AbstractSeriesManager::add(const TSID& tsid,
+void AbstractSeriesManager::add(TSID tsid,
                                 const std::vector<promql::Label>& labels)
 {
     std::lock_guard<std::mutex> lock(mutex);
@@ -28,7 +28,7 @@ void AbstractSeriesManager::add(const TSID& tsid,
     entryp->unlock();
 }
 
-SeriesEntry* AbstractSeriesManager::get(const TSID& tsid)
+SeriesEntry* AbstractSeriesManager::get(TSID tsid)
 {
     std::lock_guard<std::mutex> lock(mutex);
 

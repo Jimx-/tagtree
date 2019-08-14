@@ -43,7 +43,7 @@ bool BTreeSeriesManager::read_entry(RefSeriesEntry* entry)
     read(fd, buf.get(), entry_len);
     auto* p = buf.get();
 
-    entry->tsid.deserialize(p);
+    entry->tsid = *(TSID*)p;
     p += sizeof(TSID);
     entry_len -= sizeof(TSID);
 
@@ -68,7 +68,7 @@ void BTreeSeriesManager::write_entry(RefSeriesEntry* entry)
 
     *(uint32_t*)p = (uint32_t)entry_len;
     p += sizeof(uint32_t);
-    entry->tsid.serialize(p);
+    *(TSID*)p = entry->tsid;
     p += sizeof(TSID);
     for (auto&& label : entry->labels) {
         *(SymbolTable::Ref*)p = label.first;

@@ -41,7 +41,7 @@ public:
 
 class Appender {
 public:
-    virtual void add(const TSID& tsid, uint64_t t, double v) = 0;
+    virtual void add(TSID tsid, uint64_t t, double v) = 0;
 
     virtual void commit() {}
 };

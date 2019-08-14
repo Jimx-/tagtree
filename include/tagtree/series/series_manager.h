@@ -21,7 +21,7 @@ struct SeriesEntry {
     SeriesEntry(const std::vector<promql::Label>& labels = {})
         : labels(labels), dirty(false)
     {}
-    SeriesEntry(const TSID& tsid, const std::vector<promql::Label>& labels = {})
+    SeriesEntry(TSID tsid, const std::vector<promql::Label>& labels = {})
         : tsid(tsid), labels(labels), dirty(false)
     {}
 
@@ -38,8 +38,10 @@ class AbstractSeriesManager {
 public:
     AbstractSeriesManager(size_t cache_size);
 
-    void add(const TSID& tsid, const std::vector<promql::Label>& labels);
-    SeriesEntry* get(const TSID& tsid);
+    virtual size_t get_size() const = 0;
+
+    void add(TSID tsid, const std::vector<promql::Label>& labels);
+    SeriesEntry* get(TSID tsid);
 
     SymbolTable::Ref add_symbol(std::string_view symbol)
     {

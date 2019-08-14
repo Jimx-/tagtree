@@ -43,7 +43,7 @@ class IndexTree {
 public:
     IndexTree(IndexServer* server, std::string_view dir, size_t cache_size);
 
-    void add_series(const TSID& tsid, const std::vector<promql::Label>& labels);
+    void add_series(TSID tsid, const std::vector<promql::Label>& labels);
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
                            std::unordered_set<TSID>& tsids);
@@ -73,11 +73,11 @@ private:
      * The new page is locked when returned */
     bptree::Page* create_posting_page(const promql::Label& label,
                                       boost::upgrade_lock<bptree::Page>& lock);
-    void insert_posting_id(const promql::Label& label, const TSID& tsid);
-    bool insert_first_page(const promql::Label& label, const TSID& tsid,
+    void insert_posting_id(const promql::Label& label, TSID tsid);
+    bool insert_first_page(const promql::Label& label, TSID tsid,
                            bptree::Page* first_page,
                            boost::upgrade_lock<bptree::Page>& first_page_lock);
-    void insert_new_segment(const promql::Label& label, const TSID& tsid,
+    void insert_new_segment(const promql::Label& label, TSID tsid,
                             unsigned int segidx);
 
     void query_postings(const promql::LabelMatcher& matcher,

@@ -4,6 +4,7 @@
 #include "tagtree/index/index_tree.h"
 #include "tagtree/series/series_manager.h"
 
+#include <atomic>
 #include <memory>
 #include <unordered_map>
 
@@ -14,6 +15,8 @@ public:
     IndexServer(std::string_view index_dir, size_t cache_size,
                 AbstractSeriesManager* sm);
 
+    ~IndexServer();
+
     AbstractSeriesManager* get_series_manager() const { return series_manager; }
 
     inline void
@@ -23,7 +26,7 @@ public:
         index_tree.resolve_label_matchers(matcher, tsids);
     }
 
-    bool get_labels(const TSID& tsid, std::vector<promql::Label>& labels);
+    bool get_labels(TSID tsid, std::vector<promql::Label>& labels);
 
     TSID add_series(const std::vector<promql::Label>& labels);
 
@@ -33,6 +36,9 @@ public:
 private:
     IndexTree index_tree;
     AbstractSeriesManager* series_manager;
+    std::atomic<TSID> id_counter;
+
+    inline TSID get_tsid() { return id_counter.fetch_add(1); }
 };
 
 } // namespace tagtree
