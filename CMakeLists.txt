@@ -6,8 +6,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(TOPDIR ${PROJECT_SOURCE_DIR})
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${TOPDIR}/cmake")
 
-option(TAGTREE_USE_RADOS "Use Ceph/RADOS via librados" OFF)
-option(TAGTREE_USE_MONGODB "Use MongoDB" OFF)
 option(TAGTREE_USE_AVX2 "Enable AVX2 optimizations" ON)
 
 include(FindSSE)
@@ -17,33 +15,10 @@ if (TAGTREE_USE_AVX2 AND AVX2_FOUND)
    add_definitions(-D_TAGTREE_USE_AVX2_)
 endif (TAGTREE_USE_AVX2 AND AVX2_FOUND)
 
-# Find libuuid
-find_package(Libuuid REQUIRED)
-if (NOT LIBUUID_FOUND)
-   message(FATAL_ERROR "You might need to install libuuid first")
-endif()
-include_directories(${LIBUUID_INCLUDE_DIRS})
-
 set(INCLUDE_DIRS
     ${TOPDIR}/include
     ${TOPDIR}/3rdparty/bptree/include
-    ${LIBUUID_INCLUDE_DIRS}
 )
-
-if (TAGTREE_USE_MONGODB)
-   # Find MongoDB driver
-   find_package(libmongocxx REQUIRED)
-   find_package(libbsoncxx REQUIRED)
-   message(STATUS "MongoCXX status:")
-   message(STATUS "    libraries: ${LIBMONGOCXX_LIBRARIES}")
-   include_directories(${LIBMONGOCXX_INCLUDE_DIRS})
-   include_directories(${LIBBSONCXX_INCLUDE_DIRS})
-
-   set(INCLUDE_DIRS
-    ${LIBMONGOCXX_INCLUDE_DIRS}
-    ${LIBBSONCXX_INCLUDE_DIRS}
-   )
-endif (TAGTREE_USE_MONGODB)
 
 include_directories(
     ${INCLUDE_DIRS}
@@ -83,7 +58,6 @@ set(LIBRARIES
     pthread
     atomic
     bptree
-    ${LIBUUID_LIBRARY}
 )
 
 add_library(tagtree STATIC ${SOURCE_FILES} ${HEADER_FILES} ${EXT_SOURCE_FILES})
