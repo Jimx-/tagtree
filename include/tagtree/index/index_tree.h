@@ -63,25 +63,20 @@ private:
     std::unique_ptr<bptree::AbstractPageCache> page_cache;
     std::mutex tree_mutex;
     std::unique_ptr<BPTree> btree;
+    size_t postings_per_page;
 
-    size_t read_page_metadata(const uint8_t* buf, promql::Label& label,
-                              size_t& num_postings);
-    size_t write_page_metadata(uint8_t* buf, const promql::Label& label,
-                               size_t num_postings);
+    size_t read_page_metadata(const uint8_t* buf, promql::Label& label);
+    size_t write_page_metadata(uint8_t* buf, const promql::Label& label);
 
     /* Create a posting page and fill in the metadata.
      * The new page is locked when returned */
     bptree::Page* create_posting_page(const promql::Label& label,
                                       boost::upgrade_lock<bptree::Page>& lock);
     void insert_posting_id(const promql::Label& label, TSID tsid);
-    bool insert_first_page(const promql::Label& label, TSID tsid,
-                           bptree::Page* first_page,
-                           boost::upgrade_lock<bptree::Page>& first_page_lock);
-    void insert_new_segment(const promql::Label& label, TSID tsid,
-                            unsigned int segidx);
 
-    void query_postings(const promql::LabelMatcher& matcher,
-                        std::unordered_set<TSID>& posting_ids);
+    void
+    query_postings(const promql::LabelMatcher& matcher,
+                   std::map<unsigned int, std::unique_ptr<uint8_t[]>>& bitmaps);
 
     KeyType make_key(const std::string& name, const std::string& value,
                      unsigned int segsel);

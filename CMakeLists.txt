@@ -53,6 +53,7 @@ set(SOURCE_FILES
     ${TOPDIR}/src/adapters/prom/appender.cpp
     ${TOPDIR}/src/adapters/prom/indexed_storage.cpp
     ${TOPDIR}/src/adapters/prom/querier.cpp
+    ${TOPDIR}/src/index/bitmap.cpp
     ${TOPDIR}/src/index/index_server.cpp
     ${TOPDIR}/src/index/index_tree.cpp
     ${TOPDIR}/src/series/btree_series_manager.cpp
@@ -66,6 +67,7 @@ set(HEADER_FILES
     ${TOPDIR}/include/tagtree/adapters/prom/appender.h
     ${TOPDIR}/include/tagtree/adapters/prom/indexed_storage.h
     ${TOPDIR}/include/tagtree/adapters/prom/querier.h
+    ${TOPDIR}/include/tagtree/index/bitmap.h
     ${TOPDIR}/include/tagtree/index/index_server.h
     ${TOPDIR}/include/tagtree/index/index_tree.h
     ${TOPDIR}/include/tagtree/series/btree_series_manager.h
@@ -83,20 +85,6 @@ set(LIBRARIES
     bptree
     ${LIBUUID_LIBRARY}
 )
-
-if (TAGTREE_USE_RADOS)
-   set(LIBRARIES
-    ${LIBRARIES}
-    rados
-   )
-endif (TAGTREE_USE_RADOS)
-
-if (TAGTREE_USE_MONGODB)
-   set(LIBRARIES
-    ${LIBRARIES}
-    ${LIBMONGOCXX_LIBRARIES}
-   )
-endif (TAGTREE_USE_MONGODB)
 
 add_library(tagtree STATIC ${SOURCE_FILES} ${HEADER_FILES} ${EXT_SOURCE_FILES})
 target_link_libraries(tagtree ${LIBRARIES})
