@@ -76,7 +76,8 @@ private:
 
     void
     query_postings(const promql::LabelMatcher& matcher,
-                   std::map<unsigned int, std::unique_ptr<uint8_t[]>>& bitmaps);
+                   std::map<unsigned int, std::unique_ptr<uint8_t[]>>& bitmaps,
+                   const std::set<unsigned int>& seg_mask);
 
     KeyType make_key(const std::string& name, const std::string& value,
                      unsigned int segsel);

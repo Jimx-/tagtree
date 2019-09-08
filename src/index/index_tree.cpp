@@ -6,7 +6,6 @@
 #include "tagtree/series/series_manager.h"
 
 #include <cassert>
-#include <iomanip>
 
 using promql::MatchOp;
 
@@ -68,7 +67,8 @@ IndexTree::IndexTree(IndexServer* server, std::string_view dir,
 
 void IndexTree::query_postings(
     const promql::LabelMatcher& matcher,
-    std::map<unsigned int, std::unique_ptr<uint8_t[]>>& bitmaps)
+    std::map<unsigned int, std::unique_ptr<uint8_t[]>>& bitmaps,
+    const std::set<unsigned int>& seg_mask)
 {
     KeyType start_key, end_key, match_key, name_mask, name_value_mask;
     uint8_t key_buf[KEY_WIDTH];
@@ -180,6 +180,12 @@ void IndexTree::query_postings(
         }
 
         unsigned int segsel = get_segsel(it->first);
+
+        if (!seg_mask.empty() && seg_mask.find(segsel) == seg_mask.end()) {
+            it++;
+            continue;
+        }
+
         auto page_id = it->second;
         boost::upgrade_lock<bptree::Page> lock;
         auto page = page_cache->fetch_page(page_id, lock);
@@ -218,10 +224,18 @@ void IndexTree::resolve_label_matchers(
 {
     bool first = true;
     std::map<unsigned int, std::unique_ptr<uint8_t[]>> bitmaps;
+    std::set<unsigned int> seg_mask;
 
     for (auto&& p : matchers) {
+        seg_mask.clear();
+        if (!first) {
+            for (auto&& p : bitmaps) {
+                seg_mask.insert(p.first);
+            }
+        }
+
         std::map<unsigned int, std::unique_ptr<uint8_t[]>> tag_bitmaps;
-        query_postings(p, tag_bitmaps);
+        query_postings(p, tag_bitmaps, seg_mask);
 
         if (tag_bitmaps.empty()) {
             return;
