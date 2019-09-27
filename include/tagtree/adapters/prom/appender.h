@@ -3,6 +3,7 @@
 
 #include "promql/storage.h"
 #include "tagtree/storage.h"
+#include "tagtree/wal/records.h"
 
 namespace tagtree {
 namespace prom {
@@ -20,6 +21,7 @@ public:
 private:
     IndexedStorage* parent;
     std::shared_ptr<tagtree::Appender> app;
+    std::vector<SeriesRef> series;
 };
 
 } // namespace prom

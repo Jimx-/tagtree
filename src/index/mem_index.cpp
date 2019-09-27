@@ -1,0 +1,149 @@
+#include "tagtree/index/mem_index.h"
+
+#include <iostream>
+
+namespace tagtree {
+
+MemIndex::MemIndex(size_t capacity) : low_watermark(0)
+{
+    map.reserve(capacity);
+}
+
+bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid)
+{
+    std::vector<promql::LabelMatcher> matchers;
+    for (auto&& p : labels) {
+        matchers.emplace_back(promql::MatchOp::EQL, p.name, p.value);
+    }
+
+    {
+        std::unique_lock<std::shared_mutex> lock(mutex);
+
+        if (tsid <= low_watermark) return false;
+
+        /* double-checked locking */
+        MemPostingList tsids;
+        resolve_label_matchers_unsafe(matchers, tsids);
+
+        if (!tsids.isEmpty()) return true;
+
+        for (auto&& p : labels) {
+            add_label(p, tsid);
+        }
+    }
+
+    return true;
+}
+
+void MemIndex::set_low_watermark(TSID wm)
+{
+    std::unique_lock<std::shared_mutex> lock(mutex);
+    low_watermark = wm;
+}
+
+void MemIndex::resolve_label_matchers(
+    const std::vector<promql::LabelMatcher>& matchers, MemPostingList& tsids)
+{
+    std::shared_lock<std::shared_mutex> lock(mutex);
+
+    resolve_label_matchers_unsafe(matchers, tsids);
+}
+
+void MemIndex::resolve_label_matchers_unsafe(
+    const std::vector<promql::LabelMatcher>& matchers, MemPostingList& tsids)
+{
+    bool first = true;
+
+    tsids = MemPostingList{};
+
+    for (auto&& p : matchers) {
+        if (p.op == promql::MatchOp::EQL) {
+            auto name_it = map.find(p.name);
+            if (name_it == map.end()) {
+                tsids = MemPostingList{};
+                return;
+            }
+
+            auto& value_map = name_it->second;
+            auto value_it = value_map.find(p.value);
+            if (value_it == value_map.end()) {
+                tsids = MemPostingList{};
+                return;
+            }
+
+            if (first) {
+                tsids = value_it->second;
+            } else {
+                tsids &= value_it->second;
+            }
+
+            if (tsids.isEmpty()) return;
+        }
+
+        first = false;
+    }
+}
+
+void MemIndex::snapshot(TSID limit,
+                        std::vector<LabeledPostings>& labeled_postings)
+{
+    std::unique_lock<std::shared_mutex> lock(mutex);
+
+    for (auto&& name : map) {
+        for (auto&& value : name.second) {
+            auto& bitmap = value.second;
+
+            if (!bitmap.isEmpty()) continue;
+            if (bitmap.minimum() > limit) continue;
+
+            labeled_postings.emplace_back(name.first, value.first);
+            auto& new_bitmap = labeled_postings.back().postings;
+            new_bitmap = bitmap;
+            new_bitmap.runOptimize();
+        }
+    }
+}
+
+void MemIndex::add_label(const promql::Label& label, TSID tsid)
+{
+    map[label.name][label.value].add(tsid);
+}
+
+void MemIndex::gc()
+{
+    /* clear postings up to low watermark */
+    std::unique_lock<std::shared_mutex> lock(mutex);
+
+    for (auto name_it = map.begin(); name_it != map.end();) {
+        auto& name_map = name_it->second;
+
+        for (auto value_it = name_map.begin(); value_it != name_map.end();) {
+            auto& posting = value_it->second;
+
+            auto last_it = posting.begin();
+            last_it.equalorlarger(low_watermark);
+
+            if (last_it == posting.end()) {
+                value_it = name_map.erase(value_it);
+                continue;
+            }
+
+            MemPostingList new_posting;
+            for (; last_it != posting.end(); last_it++) {
+                new_posting.add(*last_it);
+            }
+
+            posting = std::move(new_posting);
+
+            value_it++;
+        }
+
+        if (name_map.empty()) {
+            name_it = map.erase(name_it);
+        } else {
+            name_it++;
+        }
+    }
+}
+
+} // namespace tagtree

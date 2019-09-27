@@ -1,6 +1,23 @@
 #include "tagtree/series/series_manager.h"
 
+#include "xxhash.h"
+
 namespace tagtree {
+
+static uint64_t get_label_set_hash(const std::vector<promql::Label>& lset)
+{
+    std::string buffer;
+    const char sep = 0xff;
+
+    for (auto&& p : lset) {
+        buffer += p.name;
+        buffer += sep;
+        buffer += p.value;
+        buffer += sep;
+    }
+
+    return XXH64(buffer.c_str(), buffer.length(), 0);
+}
 
 AbstractSeriesManager::AbstractSeriesManager(size_t cache_size)
     : max_entries(cache_size), symtab("symbol.tab")
@@ -9,7 +26,7 @@ AbstractSeriesManager::AbstractSeriesManager(size_t cache_size)
 void AbstractSeriesManager::add(TSID tsid,
                                 const std::vector<promql::Label>& labels)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::unique_lock<std::shared_mutex> lock(mutex);
 
     auto new_entry = get_entry();
     new_entry->tsid = tsid;
@@ -19,10 +36,12 @@ void AbstractSeriesManager::add(TSID tsid,
 
     lru_list.emplace_front(tsid, std::move(new_entry));
     series_map.emplace(tsid, lru_list.begin());
+    auto hash = get_label_set_hash(labels);
+    series_hash_map.emplace(hash, entryp);
 
-    RefSeriesEntry rsent;
-    sent_to_rsent(entryp, &rsent);
-    write_entry(&rsent);
+    // RefSeriesEntry rsent;
+    // sent_to_rsent(entryp, &rsent);
+    // write_entry(&rsent);
     entryp->dirty = false;
 
     entryp->unlock();
@@ -30,29 +49,59 @@ void AbstractSeriesManager::add(TSID tsid,
 
 SeriesEntry* AbstractSeriesManager::get(TSID tsid)
 {
-    std::lock_guard<std::mutex> lock(mutex);
+    std::unique_lock<std::shared_mutex> lock(mutex);
 
     auto it = series_map.find(tsid);
     if (it == series_map.end()) {
-        RefSeriesEntry rsent;
-        rsent.tsid = tsid;
-        if (!read_entry(&rsent)) {
-            return nullptr;
-        }
+        // RefSeriesEntry rsent;
+        // rsent.tsid = tsid;
+        // if (!read_entry(&rsent)) {
+        //     return nullptr;
+        // }
 
-        auto new_entry = get_entry();
-        auto* entryp = new_entry.get();
-        rsent_to_sent(&rsent, entryp);
+        // auto new_entry = get_entry();
+        // auto* entryp = new_entry.get();
+        // rsent_to_sent(&rsent, entryp);
 
-        lru_list.emplace_front(tsid, std::move(new_entry));
-        series_map.emplace(tsid, lru_list.begin());
+        // lru_list.emplace_front(tsid, std::move(new_entry));
+        // series_map.emplace(tsid, lru_list.begin());
 
-        return entryp;
+        // return entryp;
     }
 
     lru_list.splice(lru_list.begin(), lru_list, it->second);
 
     auto* entry = it->second->second.get();
+    entry->lock();
+    return entry;
+}
+
+SeriesEntry*
+AbstractSeriesManager::get_by_label_set(const std::vector<promql::Label>& lset)
+{
+    std::shared_lock<std::shared_mutex> lock(mutex);
+
+    auto hash = get_label_set_hash(lset);
+    auto it = series_hash_map.find(hash);
+
+    if (it == series_hash_map.end()) {
+        return nullptr;
+    }
+
+    auto entry = it->second;
+
+    if (entry->labels.size() != lset.size()) {
+        return nullptr;
+    }
+
+    auto it1 = lset.begin();
+    auto it2 = entry->labels.begin();
+    for (; it1 != lset.begin(); it++, it2++) {
+        if (it1->name != it2->name || it1->value != it2->value) {
+            return nullptr;
+        }
+    }
+
     entry->lock();
     return entry;
 }
@@ -67,12 +116,14 @@ std::unique_ptr<SeriesEntry> AbstractSeriesManager::get_entry()
         new_entry = std::move(lru_list.back().second);
 
         if (new_entry->dirty) {
-            RefSeriesEntry rsent;
-            sent_to_rsent(new_entry.get(), &rsent);
-            write_entry(&rsent);
+            // RefSeriesEntry rsent;
+            // sent_to_rsent(new_entry.get(), &rsent);
+            // write_entry(&rsent);
             new_entry->dirty = false;
         }
         series_map.erase(lru_list.back().first);
+        auto hash = get_label_set_hash(new_entry->labels);
+        series_map.erase(hash);
         lru_list.pop_back();
     }
 

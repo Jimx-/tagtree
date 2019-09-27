@@ -12,12 +12,16 @@ include(FindSSE)
 if (TAGTREE_USE_AVX2 AND AVX2_FOUND)
    message(STATUS "AVX2 optimizations enabled")
    add_compile_options(-mavx2)
+   add_compile_options(-mavx512f)
    add_definitions(-D_TAGTREE_USE_AVX2_)
 endif (TAGTREE_USE_AVX2 AND AVX2_FOUND)
 
 set(INCLUDE_DIRS
     ${TOPDIR}/include
     ${TOPDIR}/3rdparty/bptree/include
+    ${TOPDIR}/3rdparty/CRoaringUnityBuild
+    ${TOPDIR}/3rdparty/xxHash
+    ${TOPDIR}/3rdparty/CRCpp/inc
 )
 
 include_directories(
@@ -31,11 +35,15 @@ set(SOURCE_FILES
     ${TOPDIR}/src/index/bitmap.cpp
     ${TOPDIR}/src/index/index_server.cpp
     ${TOPDIR}/src/index/index_tree.cpp
+    ${TOPDIR}/src/index/mem_index.cpp
     ${TOPDIR}/src/series/btree_series_manager.cpp
     ${TOPDIR}/src/series/series_manager.cpp
     ${TOPDIR}/src/series/symbol_table.cpp
+    ${TOPDIR}/src/wal/record_serializer.cpp
+    ${TOPDIR}/src/wal/reader.cpp
+    ${TOPDIR}/src/wal/wal.cpp
 )
-           
+
 set(HEADER_FILES
     ${TOPDIR}/include/tagtree/storage.h
     ${TOPDIR}/include/tagtree/tsid.h
@@ -45,12 +53,20 @@ set(HEADER_FILES
     ${TOPDIR}/include/tagtree/index/bitmap.h
     ${TOPDIR}/include/tagtree/index/index_server.h
     ${TOPDIR}/include/tagtree/index/index_tree.h
+    ${TOPDIR}/include/tagtree/index/mem_index.h
     ${TOPDIR}/include/tagtree/series/btree_series_manager.h
     ${TOPDIR}/include/tagtree/series/series_manager.h
     ${TOPDIR}/include/tagtree/series/symbol_table.h
+    ${TOPDIR}/include/tagtree/wal/reader.h
+    ${TOPDIR}/include/tagtree/wal/records.h
+    ${TOPDIR}/include/tagtree/wal/record_serializer.h
+    ${TOPDIR}/include/tagtree/wal/wal.h
 )
 
-set(EXT_SOURCE_FILES )
+set(EXT_SOURCE_FILES
+    3rdparty/CRoaringUnityBuild/roaring.c
+    ${TOPDIR}/3rdparty/xxHash/xxhash.c
+)
 
 add_subdirectory(${TOPDIR}/3rdparty/bptree)
 

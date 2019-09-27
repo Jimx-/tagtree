@@ -1,5 +1,5 @@
 #include "tagtree/series/btree_series_manager.h"
-#include "bptree/heap_page_cache.h"
+#include "bptree/mem_page_cache.h"
 
 #include <cstdlib>
 #include <cstring>
@@ -16,8 +16,7 @@ BTreeSeriesManager::BTreeSeriesManager(size_t cache_size,
                                        std::string_view filename,
                                        std::string_view index_file)
     : AbstractSeriesManager(cache_size), filename(filename),
-      page_cache(std::make_unique<bptree::HeapPageCache>(index_file, true,
-                                                         cache_size)),
+      page_cache(std::make_unique<bptree::MemPageCache>(4096)),
       btree(std::make_unique<BPTree>(page_cache.get()))
 {
     open_db();

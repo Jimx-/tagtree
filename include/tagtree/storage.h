@@ -31,7 +31,7 @@ public:
 class Querier {
 public:
     virtual std::shared_ptr<SeriesSet>
-    select(const std::unordered_set<TSID>& tsids) = 0;
+    select(const std::vector<TSID>& tsids) = 0;
 };
 
 class Queryable {

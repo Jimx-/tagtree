@@ -10,7 +10,9 @@
 #include "bptree/page_cache.h"
 #include "bptree/tree.h"
 #include "promql/labels.h"
+#include "tagtree/index/mem_index.h"
 #include "tagtree/series/series_manager.h"
+#include "tagtree/tree/cow_tree_node.h"
 #include "tagtree/tsid.h"
 
 #include <atomic>
@@ -43,10 +45,11 @@ class IndexTree {
 public:
     IndexTree(IndexServer* server, std::string_view dir, size_t cache_size);
 
-    void add_series(TSID tsid, const std::vector<promql::Label>& labels);
+    void write_postings(const std::vector<LabeledPostings>& labeled_postings);
+
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
-                           std::unordered_set<TSID>& tsids);
+                           Roaring& postings);
 
 private:
     static const size_t NAME_BYTES = 4;
@@ -57,13 +60,17 @@ private:
     // using KeyType = KeyTypeSelector<KEY_WIDTH>::key_type;
     using KeyType = std::conditional<KEY_WIDTH <= sizeof(uint64_t), uint64_t,
                                      StringKey<KEY_WIDTH>>::type;
-    using BPTree = bptree::BTree<200, KeyType, bptree::PageID>;
+    using COWTreeType = tagtree::COWTree<200, KeyType, bptree::PageID>;
 
     IndexServer* server;
     std::unique_ptr<bptree::AbstractPageCache> page_cache;
-    std::mutex tree_mutex;
-    std::unique_ptr<BPTree> btree;
+    COWTreeType cow_tree;
     size_t postings_per_page;
+
+    inline unsigned int tsid_segsel(TSID tsid)
+    {
+        return tsid / postings_per_page;
+    }
 
     size_t read_page_metadata(const uint8_t* buf, promql::Label& label);
     size_t write_page_metadata(uint8_t* buf, const promql::Label& label);
@@ -72,7 +79,13 @@ private:
      * The new page is locked when returned */
     bptree::Page* create_posting_page(const promql::Label& label,
                                       boost::upgrade_lock<bptree::Page>& lock);
-    void insert_posting_id(const promql::Label& label, TSID tsid);
+
+    bptree::PageID write_posting_page(const std::string& name,
+                                      const std::string& value,
+                                      unsigned int segsel,
+                                      const RoaringSetBitForwardIterator& first,
+                                      const RoaringSetBitForwardIterator& last,
+                                      bool& updated);
 
     void
     query_postings(const promql::LabelMatcher& matcher,

@@ -83,20 +83,15 @@ public:
         return node;
     }
 
-    void get_value(Version version, const K& key, std::vector<V>& value_list)
+    void get_value(const K& key, std::vector<V>& value_list,
+                   Version version = LATEST_VERSION)
     {
-        value_list.clear();
+        typename BaseNodeType::ValueListIterator value_first = nullptr,
+                                                 value_last = nullptr;
         auto* root = get_read_tree(version);
-        root->get_values(key, true, false, nullptr, value_list);
-    }
-
-    void collect_values(Version version, const K& key, bool upper_bound,
-                        std::vector<K>& key_list, std::vector<V>& value_list)
-    {
-        key_list.clear();
-        value_list.clear();
-        auto* root = get_read_tree(version);
-        root->get_values(key, upper_bound, true, &key_list, value_list);
+        root->get_values(key, true, false, nullptr, nullptr, value_first,
+                         value_last);
+        value_list.assign(value_first, value_last);
     }
 
     void insert(const K& key, const V& value, Transaction& txn)
@@ -251,6 +246,19 @@ public:
         return os;
     }
 
+private:
+    void collect_values(Version version, const K& key, bool upper_bound,
+                        typename BaseNodeType::KeyListIterator& key_first,
+                        typename BaseNodeType::KeyListIterator& key_last,
+                        typename BaseNodeType::ValueListIterator& value_first,
+                        typename BaseNodeType::ValueListIterator& value_last)
+    {
+        auto* root = get_read_tree(version);
+        root->get_values(key, upper_bound, true, &key_first, &key_last,
+                         value_first, value_last);
+    }
+
+public:
     /* iterator interface */
     class iterator {
         friend TreeType;
@@ -274,6 +282,7 @@ public:
             inc();
             return *this;
         }
+
         reference operator*() { return kvp; }
         pointer operator->() { return &kvp; }
         bool operator==(const self_type& rhs) { return false; }
@@ -281,9 +290,10 @@ public:
         bool is_end() const { return ended; }
 
     private:
-        std::vector<K> key_buf;
-        std::vector<V> value_buf;
-        size_t idx;
+        typename BaseNodeType::KeyListIterator key_first;
+        typename BaseNodeType::KeyListIterator key_last;
+        typename BaseNodeType::ValueListIterator value_first;
+        typename BaseNodeType::ValueListIterator value_last;
         value_type kvp;
         bool ended;
         Version version;
@@ -297,36 +307,43 @@ public:
             : tree(tree), kcmp(kcmp), version(version)
         {
             ended = false;
-            tree->collect_values(version, key, true, key_buf, value_buf);
-            idx = std::lower_bound(key_buf.begin(), key_buf.end(), key, kcmp) -
-                  key_buf.begin();
-            if (idx == key_buf.size()) {
+            tree->collect_values(version, key, true, key_first, key_last,
+                                 value_first, value_last);
+            auto it = std::lower_bound(key_first, key_last, key, kcmp);
+            if (it == key_last) {
                 ended = true;
             } else {
-                kvp = std::make_pair(key_buf[idx], value_buf[idx]);
+                value_first += std::distance(key_first, it);
+                key_first = it;
+
+                kvp = std::make_pair(*key_first, *value_first);
             }
         }
 
         void inc()
         {
             if (ended) return;
-            idx++;
-            if (idx == key_buf.size()) {
+            if (key_first + 1 == key_last) {
                 get_next_batch();
+            } else {
+                key_first++;
+                value_first++;
             }
             if (ended) return;
-            kvp = std::make_pair(key_buf[idx], value_buf[idx]);
+            kvp = std::make_pair(*key_first, *value_first);
         }
 
         void get_next_batch()
         {
-            K last_key = key_buf.back();
-            tree->collect_values(version, last_key, false, key_buf, value_buf);
-            idx = std::upper_bound(key_buf.begin(), key_buf.end(), last_key,
-                                   kcmp) -
-                  key_buf.begin();
-            if (idx == key_buf.size()) {
+            K last_key = *key_first;
+            tree->collect_values(version, last_key, false, key_first, key_last,
+                                 value_first, value_last);
+            auto it = std::upper_bound(key_first, key_last, last_key, kcmp);
+            if (it == key_last) {
                 ended = true;
+            } else {
+                value_first += std::distance(key_first, it);
+                key_first = it;
             }
         }
     };

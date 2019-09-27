@@ -16,6 +16,9 @@ public:
     using TreeType =
         COWTree<N, K, V, KeySerializer, KeyComparator, KeyEq, ValueSerializer>;
 
+    using KeyListIterator = K*;
+    using ValueListIterator = V*;
+
     BaseCOWNode(BaseCOWNode* parent, bptree::PageID pid, bool new_node,
                 KeyComparator kcmp = KeyComparator{}, KeyEq keq = KeyEq{})
         : pid(pid), parent(parent), kcmp(kcmp), keq(keq), size(0),
@@ -38,8 +41,10 @@ public:
     virtual void deserialize(const uint8_t* buf, size_t size) = 0;
 
     virtual void get_values(const K& key, bool upper_bound, bool collect,
-                            std::vector<K>* key_list,
-                            std::vector<V>& value_list) = 0;
+                            KeyListIterator* key_first,
+                            KeyListIterator* key_last,
+                            ValueListIterator& value_first,
+                            ValueListIterator& value_last) = 0;
 
     virtual std::pair<std::shared_ptr<BaseNodeType>,
                       std::shared_ptr<BaseNodeType>>
@@ -145,9 +150,12 @@ public:
         return nullptr;
     }
 
-    virtual void get_values(const K& key, bool upper_bound, bool collect,
-                            std::vector<K>* key_list,
-                            std::vector<V>& value_list)
+    virtual void
+    get_values(const K& key, bool upper_bound, bool collect,
+               typename BaseNodeType::KeyListIterator* key_first,
+               typename BaseNodeType::KeyListIterator* key_last,
+               typename BaseNodeType::ValueListIterator& value_first,
+               typename BaseNodeType::ValueListIterator& value_last)
     {
         /* direct the search to the child */
         int child_idx =
@@ -162,7 +170,8 @@ public:
         }
         if (!child) return;
 
-        child->get_values(key, upper_bound, collect, key_list, value_list);
+        child->get_values(key, upper_bound, collect, key_first, key_last,
+                          value_first, value_last);
     }
 
     virtual std::pair<std::shared_ptr<BaseNodeType>,
@@ -346,16 +355,19 @@ public:
         nbytes = value_serializer.deserialize(values.begin(), values.end(), buf,
                                               size);
     }
+    virtual void
+    get_values(const K& key, bool upper_bound, bool collect,
+               typename BaseNodeType::KeyListIterator* key_first,
+               typename BaseNodeType::KeyListIterator* key_last,
+               typename BaseNodeType::ValueListIterator& value_first,
+               typename BaseNodeType::ValueListIterator& value_last)
 
-    virtual void get_values(const K& key, bool upper_bound, bool collect,
-                            std::vector<K>* key_list,
-                            std::vector<V>& value_list)
     {
         if (collect) {
-            std::copy(keys.begin(), keys.begin() + this->size,
-                      std::back_inserter(*key_list));
-            std::copy(values.begin(), values.begin() + this->size,
-                      std::back_inserter(value_list));
+            *key_first = keys.begin();
+            *key_last = keys.begin() + this->size;
+            value_first = values.begin();
+            value_last = values.begin() + this->size;
         } else {
             auto lower = std::lower_bound(
                 keys.begin(), keys.begin() + this->size, key, this->kcmp);
@@ -366,9 +378,8 @@ public:
             while (this->keq(key, *upper))
                 upper++;
 
-            std::copy(&values[lower - keys.begin()],
-                      &values[upper - keys.begin()],
-                      std::back_inserter(value_list));
+            value_first = values.begin() + std::distance(keys.begin(), lower);
+            value_last = values.begin() + std::distance(keys.begin(), upper);
         }
     }
 

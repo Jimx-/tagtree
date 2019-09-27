@@ -1,5 +1,6 @@
 #include "tagtree/index/bitmap.h"
 
+#include <algorithm>
 #include <cstdint>
 
 #ifdef _TAGTREE_USE_AVX2_

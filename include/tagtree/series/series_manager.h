@@ -8,6 +8,7 @@
 #include <list>
 #include <memory>
 #include <mutex>
+#include <shared_mutex>
 #include <unordered_map>
 
 namespace tagtree {
@@ -42,6 +43,7 @@ public:
 
     void add(TSID tsid, const std::vector<promql::Label>& labels);
     SeriesEntry* get(TSID tsid);
+    SeriesEntry* get_by_label_set(const std::vector<promql::Label>& lset);
 
     SymbolTable::Ref add_symbol(std::string_view symbol)
     {
@@ -57,7 +59,7 @@ protected:
     virtual void write_entry(RefSeriesEntry* entry) = 0;
 
 private:
-    std::mutex mutex;
+    std::shared_mutex mutex;
     size_t max_entries;
     SymbolTable symtab;
 
@@ -65,6 +67,7 @@ private:
         std::list<std::pair<TSID, std::unique_ptr<SeriesEntry>>>;
     LRUListType lru_list;
     std::unordered_map<TSID, LRUListType::iterator> series_map;
+    std::unordered_map<uint64_t, SeriesEntry*> series_hash_map;
 
     std::unique_ptr<SeriesEntry> get_entry();
 

@@ -14,29 +14,33 @@ PromAppender::PromAppender(IndexedStorage* parent) : parent(parent)
 void PromAppender::add(const std::vector<promql::Label>& labels, uint64_t t,
                        double v)
 {
-    std::vector<promql::LabelMatcher> matchers;
-    for (auto&& p : labels) {
-        matchers.emplace_back(MatchOp::EQL, p.name, p.value);
-    }
 
-    std::unordered_set<TSID> tsids;
-    parent->get_index()->resolve_label_matchers(matchers, tsids);
+    MemPostingList tsids;
+    parent->get_index()->exists(labels, tsids);
 
-    if (tsids.size() > 1) {
+    if (tsids.cardinality() > 1) {
         throw std::runtime_error("series is not unique");
     }
 
-    if (tsids.empty()) {
-        auto tsid = parent->get_index()->add_series(labels);
-        tsids.insert(tsid);
+    TSID tsid;
+    if (!tsids.cardinality()) {
+        tsid = parent->get_index()->add_series(labels);
+        series.emplace_back(tsid, labels);
+    } else {
+        tsid = *tsids.begin();
     }
 
-    for (auto&& p : tsids) {
-        app->add(p, t, v);
-    }
+    app->add(tsid, t, v);
 }
 
-void PromAppender::commit() { app->commit(); }
+void PromAppender::commit()
+{
+    if (series.size()) {
+        parent->get_index()->commit(series);
+    }
+
+    app->commit();
+}
 
 } // namespace prom
 } // namespace tagtree
