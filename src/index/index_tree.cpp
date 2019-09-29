@@ -55,14 +55,17 @@ void IndexTree::clear_key<StringKey<IndexTree::KEY_WIDTH>>(
     key = StringKey<KEY_WIDTH>();
 }
 
-IndexTree::IndexTree(IndexServer* server, std::string_view dir,
+IndexTree::IndexTree(IndexServer* server, std::string_view filename,
                      size_t cache_size)
-    : server(server), page_cache(std::make_unique<bptree::MemPageCache>(4096)),
+    : server(server), page_cache(std::make_unique<bptree::HeapPageCache>(
+                          filename, true, cache_size)),
       cow_tree(page_cache.get())
 {
     postings_per_page =
         (page_cache->get_page_size() - 2 * sizeof(SymbolTable::Ref)) << 3;
 }
+
+IndexTree::~IndexTree() {}
 
 void IndexTree::query_postings(
     const promql::LabelMatcher& matcher,
@@ -289,7 +292,7 @@ void IndexTree::resolve_label_matchers(
 }
 
 void IndexTree::write_postings(
-    const std::vector<LabeledPostings>& labeled_postings)
+    TSID limit, const std::vector<LabeledPostings>& labeled_postings)
 {
     struct TreeEntry {
         KeyType key;
@@ -301,26 +304,35 @@ void IndexTree::write_postings(
         {}
     };
     std::vector<TreeEntry> tree_entries;
+    std::unordered_set<KeyType> keys;
 
     for (auto&& entry : labeled_postings) {
         auto& name = entry.label.name;
         auto& value = entry.label.value;
         auto& bitmap = entry.postings;
 
+        if (bitmap.isEmpty()) continue;
+
         auto left_it = bitmap.begin();
         auto left_segsel = tsid_segsel(*left_it);
 
         auto it = left_it;
         ++it;
-        for (; it != bitmap.end(); it++) {
+        auto end_it = bitmap.begin();
+        end_it.equalorlarger(limit);
+        if (end_it != bitmap.end()) end_it++;
+
+        bool updated;
+        bptree::PageID pid;
+        KeyType posting_key;
+        for (; it != end_it; it++) {
             auto cur_segsel = tsid_segsel(*it);
 
             if (cur_segsel != left_segsel) {
-                bool updated;
-                auto pid = write_posting_page(name, value, left_segsel, left_it,
-                                              it, updated);
+                pid = write_posting_page(name, value, left_segsel, left_it, it,
+                                         updated);
 
-                auto posting_key = make_key(name, value, left_segsel);
+                posting_key = make_key(name, value, left_segsel);
                 tree_entries.emplace_back(posting_key, pid, updated);
 
                 left_segsel = cur_segsel;
@@ -328,12 +340,11 @@ void IndexTree::write_postings(
             }
         }
 
-        if (left_it != bitmap.end()) {
-            bool updated;
-            auto pid = write_posting_page(name, value, left_segsel, left_it,
-                                          bitmap.end(), updated);
+        if (left_it != end_it) {
+            pid = write_posting_page(name, value, left_segsel, left_it, end_it,
+                                     updated);
 
-            auto posting_key = make_key(name, value, left_segsel);
+            posting_key = make_key(name, value, left_segsel);
             tree_entries.emplace_back(posting_key, pid, updated);
         }
     }

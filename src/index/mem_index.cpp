@@ -19,7 +19,9 @@ bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid)
     {
         std::unique_lock<std::shared_mutex> lock(mutex);
 
-        if (tsid <= low_watermark) return false;
+        if (tsid <= low_watermark) {
+            return false;
+        }
 
         /* double-checked locking */
         MemPostingList tsids;
@@ -93,7 +95,8 @@ void MemIndex::snapshot(TSID limit,
         for (auto&& value : name.second) {
             auto& bitmap = value.second;
 
-            if (!bitmap.isEmpty()) continue;
+            if (bitmap.isEmpty()) continue;
+
             if (bitmap.minimum() > limit) continue;
 
             labeled_postings.emplace_back(name.first, value.first);

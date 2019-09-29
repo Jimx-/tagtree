@@ -17,6 +17,14 @@ SymbolTable::SymbolTable(std::string_view filename) : filename(filename)
     load_symtab();
 }
 
+SymbolTable::~SymbolTable()
+{
+    if (fd != -1) {
+        ::fsync(fd);
+        ::close(fd);
+    }
+}
+
 SymbolTable::Ref SymbolTable::add_symbol(std::string_view symbol)
 {
     std::unique_lock<std::shared_mutex> lock(mutex);
@@ -26,7 +34,6 @@ SymbolTable::Ref SymbolTable::add_symbol(std::string_view symbol)
         Ref ref = symbols.size();
         symbols.push_back(symbol.data());
         symbol_map.emplace(symbol.data(), ref);
-        write_symbol(symbol, lock);
         return ref;
     }
 
@@ -36,6 +43,10 @@ SymbolTable::Ref SymbolTable::add_symbol(std::string_view symbol)
 const std::string& SymbolTable::get_symbol(Ref ref)
 {
     std::shared_lock<std::shared_mutex> lock(mutex);
+
+    if (ref >= symbols.size()) {
+        throw std::runtime_error("symbol table out of bound");
+    }
     return symbols[ref];
 }
 
@@ -99,11 +110,12 @@ void SymbolTable::load_symtab()
     p += sizeof(uint32_t);
     offset += sizeof(uint32_t);
 
-    while (p < &buf[buflen]) {
+    while (true) {
         size_t remaining = &buf[buflen] - p;
         if (remaining < sizeof(uint32_t)) {
             lseek(fd, offset, SEEK_SET);
             buflen = read(fd, buf, sizeof(buf));
+            if (buflen == 0) break;
             if (buflen < sizeof(uint32_t)) {
                 throw std::runtime_error("symbol table file corrupted");
             }
@@ -134,6 +146,8 @@ void SymbolTable::load_symtab()
         p += length;
         offset += length;
     }
+
+    last_flushed_ref = symbols.size();
 }
 
 void SymbolTable::write_symbol(std::string_view symbol,
@@ -152,6 +166,51 @@ void SymbolTable::write_symbol(std::string_view symbol,
     if (written != sizeof(uint32_t) + symbol.length()) {
         throw std::runtime_error("failed to write symbol entry");
     }
+}
+
+void SymbolTable::flush()
+{
+    std::unique_lock<std::shared_mutex> lock(mutex);
+
+    const size_t bufsize = 4096;
+    char buf[bufsize];
+    char *p, *lim = buf + bufsize;
+
+    p = buf;
+
+    for (auto it = symbols.begin() + last_flushed_ref; it != symbols.end();
+         it++) {
+        auto& symbol = *it;
+        size_t remaining = lim - p;
+        size_t symbol_len = symbol.length() + sizeof(uint32_t);
+
+        if (remaining < symbol_len) {
+            lseek(fd, 0, SEEK_END);
+            size_t n = p - buf;
+            ssize_t retval = write(fd, buf, n);
+            if (retval != n) {
+                throw std::runtime_error("failed to write symbol table");
+            }
+            p = buf;
+        }
+
+        *(uint32_t*)p = symbol.length();
+        p += sizeof(uint32_t);
+        ::memcpy(p, symbol.c_str(), symbol.length());
+        p += symbol.length();
+    }
+
+    if (p - buf) {
+        lseek(fd, 0, SEEK_END);
+        size_t n = p - buf;
+        ssize_t retval = write(fd, buf, n);
+        if (retval != n) {
+            throw std::runtime_error("failed to write symbol table");
+        }
+    }
+
+    last_flushed_ref = symbols.size();
+    ::fsync(fd);
 }
 
 } // namespace tagtree

@@ -40,6 +40,8 @@ void PromAppender::commit()
     }
 
     app->commit();
+
+    series.clear();
 }
 
 } // namespace prom

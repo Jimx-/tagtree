@@ -4,6 +4,8 @@
 #include "bptree/page_cache.h"
 #include "bptree/serializer.h"
 
+#include "CRC.h"
+
 #include <cassert>
 #include <iostream>
 #include <shared_mutex>
@@ -65,10 +67,28 @@ public:
 
     COWTree(bptree::AbstractPageCache* page_cache) : page_cache(page_cache)
     {
-        latest_version.store(1);
-        root_map[1] =
-            create_node<LeafCOWNode<N, K, V, KeySerializer, KeyComparator,
-                                    KeyEq, ValueSerializer>>(nullptr);
+        auto created = !read_metadata();
+
+        if (created) {
+            {
+                boost::upgrade_lock<bptree::Page> lock;
+                auto page = page_cache->new_page(lock);
+                assert(page->get_id() == META_PAGE_ID);
+            }
+
+            latest_version.store(1);
+            auto new_root =
+                create_node<LeafCOWNode<N, K, V, KeySerializer, KeyComparator,
+                                        KeyEq, ValueSerializer>>(nullptr);
+            root_map[1] = new_root;
+
+            metadata_index = 0;
+
+            new_root->set_new_node(false);
+            write_node(new_root.get());
+            write_metadata(1, new_root->get_pid());
+            write_metadata(1, new_root->get_pid());
+        }
     }
 
     template <typename T, typename std::enable_if<std::is_base_of<
@@ -178,6 +198,8 @@ public:
             std::unique_lock<std::shared_mutex> lock(root_mutex);
             root_map.emplace(txn.old_version + 1, txn.new_root);
         }
+        write_metadata(txn.old_version + 1, txn.new_root->get_pid());
+
         txn.new_root = nullptr;
         txn.old_version = 0;
 
@@ -398,6 +420,7 @@ private:
         std::unordered_map<Version, std::shared_ptr<BaseNodeType>>;
     RootMapType root_map;
     std::shared_mutex root_mutex;
+    int metadata_index; // for double write
 
     BaseNodeType* get_read_tree(Version version)
     {
@@ -422,28 +445,83 @@ private:
         if (!page) return false;
 
         const auto* buf = page->get_buffer(lock);
+        auto magic = *reinterpret_cast<const uint32_t*>(buf);
         buf += sizeof(uint32_t);
-        size_t pair_count = *reinterpret_cast<const uint32_t*>(buf);
+
+        if (magic != META_PAGE_MAGIC) {
+            return false;
+        }
+
+        latest_version.store(0, std::memory_order_relaxed);
+
+        bool ok = false;
+        metadata_index = 0;
+        for (int i = 0; i < 2; i++) {
+            const auto metadata_size =
+                sizeof(uint32_t) + sizeof(bptree::PageID);
+            uint32_t crc = CRC::Calculate(buf, metadata_size, CRC::CRC_32());
+            uint32_t crc_read =
+                *reinterpret_cast<const uint32_t*>(buf + metadata_size);
+
+            if (crc != crc_read) {
+                continue;
+            }
+
+            auto version = *reinterpret_cast<const uint32_t*>(buf);
+            buf += sizeof(uint32_t);
+            auto root_id = *reinterpret_cast<const bptree::PageID*>(buf);
+            buf += sizeof(bptree::PageID);
+            buf += sizeof(uint32_t);
+
+            auto root_node = read_node(nullptr, root_id);
+            root_map.emplace(version, std::move(root_node));
+
+            if (latest_version.load(std::memory_order_relaxed) < version) {
+                latest_version.store(version, std::memory_order_relaxed);
+                metadata_index = 1 - i;
+            }
+
+            ok = true;
+        }
 
         page_cache->unpin_page(page, false, lock);
 
-        return true;
+        return ok;
     }
 
-    void write_metadata()
+    void write_metadata(Version version, bptree::PageID root_pid)
     {
-        boost::upgrade_lock<bptree::Page> lock;
-        auto page = page_cache->fetch_page(META_PAGE_ID, lock);
+        std::shared_lock<std::shared_mutex> root_lock(root_mutex);
+
+        boost::upgrade_lock<bptree::Page> page_lock;
+        auto page = page_cache->fetch_page(META_PAGE_ID, page_lock);
 
         {
-            boost::upgrade_to_unique_lock<bptree::Page> ulock(lock);
+            boost::upgrade_to_unique_lock<bptree::Page> ulock(page_lock);
             auto* buf = page->get_buffer(ulock);
 
-            *reinterpret_cast<uint32_t*>(buf) = META_PAGE_MAGIC;
+            auto magic = *reinterpret_cast<const uint32_t*>(buf);
+            if (magic != META_PAGE_MAGIC) {
+                *reinterpret_cast<uint32_t*>(buf) = META_PAGE_MAGIC;
+            }
             buf += sizeof(uint32_t);
+
+            const auto metadata_size =
+                sizeof(uint32_t) + sizeof(bptree::PageID);
+
+            buf += metadata_index * (metadata_size + sizeof(uint32_t));
+            const uint8_t* mdp = buf;
+            *reinterpret_cast<uint32_t*>(buf) = version;
+            buf += sizeof(uint32_t);
+            *reinterpret_cast<bptree::PageID*>(buf) = root_pid;
+            buf += sizeof(bptree::PageID);
+            *reinterpret_cast<uint32_t*>(buf) =
+                CRC::Calculate(mdp, metadata_size, CRC::CRC_32());
+
+            metadata_index = 1 - metadata_index;
         }
 
-        page_cache->unpin_page(page, true, lock);
+        page_cache->unpin_page(page, true, page_lock);
     }
 };
 

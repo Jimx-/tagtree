@@ -40,7 +40,7 @@ public:
     virtual void serialize(uint8_t* buf, size_t size) const = 0;
     virtual void deserialize(const uint8_t* buf, size_t size) = 0;
 
-    virtual void get_values(const K& key, bool upper_bound, bool collect,
+    virtual void get_values(const K& key, bool skip_last, bool collect,
                             KeyListIterator* key_first,
                             KeyListIterator* key_last,
                             ValueListIterator& value_first,
@@ -151,7 +151,7 @@ public:
     }
 
     virtual void
-    get_values(const K& key, bool upper_bound, bool collect,
+    get_values(const K& key, bool skip_last, bool collect,
                typename BaseNodeType::KeyListIterator* key_first,
                typename BaseNodeType::KeyListIterator* key_last,
                typename BaseNodeType::ValueListIterator& value_first,
@@ -163,14 +163,17 @@ public:
                              this->kcmp) -
             keys.begin();
         auto child = get_child(child_idx);
-        if (!upper_bound && child_idx != this->size &&
-            child->get_high_key() <= key) {
+        auto skip = skip_last ? child->get_high_key() < key
+                              : child->get_high_key() <= key;
+
+        if (skip && child_idx != this->size) {
             child_idx++;
             child = get_child(child_idx);
         }
+
         if (!child) return;
 
-        child->get_values(key, upper_bound, collect, key_first, key_last,
+        child->get_values(key, skip_last, collect, key_first, key_last,
                           value_first, value_last);
     }
 
@@ -356,7 +359,7 @@ public:
                                               size);
     }
     virtual void
-    get_values(const K& key, bool upper_bound, bool collect,
+    get_values(const K& key, bool skip_last, bool collect,
                typename BaseNodeType::KeyListIterator* key_first,
                typename BaseNodeType::KeyListIterator* key_last,
                typename BaseNodeType::ValueListIterator& value_first,

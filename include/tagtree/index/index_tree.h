@@ -43,17 +43,20 @@ struct KeyTypeSelector<
 
 class IndexTree {
 public:
-    IndexTree(IndexServer* server, std::string_view dir, size_t cache_size);
+    IndexTree(IndexServer* server, std::string_view filename,
+              size_t cache_size);
+    ~IndexTree();
 
-    void write_postings(const std::vector<LabeledPostings>& labeled_postings);
+    void write_postings(TSID limit,
+                        const std::vector<LabeledPostings>& labeled_postings);
 
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
                            Roaring& postings);
 
 private:
-    static const size_t NAME_BYTES = 4;
-    static const size_t VALUE_BYTES = 6;
+    static const size_t NAME_BYTES = 6;
+    static const size_t VALUE_BYTES = 8;
     static const size_t SEGSEL_BYTES = 2;
     static constexpr size_t KEY_WIDTH = NAME_BYTES + VALUE_BYTES + SEGSEL_BYTES;
 

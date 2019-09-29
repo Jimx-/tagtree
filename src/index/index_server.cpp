@@ -12,7 +12,7 @@ namespace tagtree {
 
 IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
                          AbstractSeriesManager* sm)
-    : index_tree(this, std::string(index_dir) + "index.db", cache_size),
+    : index_tree(this, std::string(index_dir) + "/index.db", cache_size),
       wal(std::string(index_dir) + "/wal")
 {
     series_manager = sm;
@@ -23,7 +23,7 @@ IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
     replay_wal();
 }
 
-IndexServer::~IndexServer() {}
+IndexServer::~IndexServer() { std::cout << id_counter.load() << std::endl; }
 
 TSID IndexServer::add_series(const std::vector<promql::Label>& labels)
 {
@@ -62,6 +62,11 @@ void IndexServer::exists(const std::vector<promql::Label>& labels,
     }
 
     index_tree.resolve_label_matchers(matchers, tsids);
+
+    if (tsids.cardinality() == 1) {
+        /* if found also add it to the cache to speed up the next lookup */
+        series_manager->add(*tsids.begin(), labels, false);
+    }
 }
 
 bool IndexServer::get_labels(TSID tsid, std::vector<promql::Label>& labels)
@@ -123,7 +128,7 @@ void IndexServer::commit(const std::vector<SeriesRef>& series)
 
 bool IndexServer::compactable(TSID current_id)
 {
-    return (current_id >= last_compaction_wm + 30000);
+    return (current_id >= last_compaction_wm + 50000);
 }
 
 void IndexServer::compact(TSID current_id)
@@ -135,7 +140,9 @@ void IndexServer::compact(TSID current_id)
     mem_index.set_low_watermark(current_id);
     mem_index.snapshot(current_id, snapshot);
 
-    index_tree.write_postings(snapshot);
+    series_manager->flush();
+
+    index_tree.write_postings(current_id, snapshot);
 
     mem_index.gc();
 
@@ -151,10 +158,11 @@ void IndexServer::replay_wal()
 
     size_t start, end;
     wal.get_segment_range(start, end);
+    start = stats.last_segment;
 
     TSID high_watermark = stats.low_watermark;
 
-    for (auto seg = stats.last_segment; seg <= end; seg++) {
+    for (auto seg = start; seg <= end; seg++) {
         auto reader = wal.get_segment_reader(seg);
         std::vector<uint8_t> recbuf;
 
@@ -191,6 +199,8 @@ void IndexServer::replay_wal()
 
     last_compaction_wm = high_watermark;
     mem_index.set_low_watermark(high_watermark);
+    id_counter.store(high_watermark);
+    std::cout << high_watermark << std::endl;
 }
 
 } // namespace tagtree

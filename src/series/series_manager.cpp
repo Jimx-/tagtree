@@ -24,7 +24,8 @@ AbstractSeriesManager::AbstractSeriesManager(size_t cache_size)
 {}
 
 void AbstractSeriesManager::add(TSID tsid,
-                                const std::vector<promql::Label>& labels)
+                                const std::vector<promql::Label>& labels,
+                                bool is_new)
 {
     std::unique_lock<std::shared_mutex> lock(mutex);
 
@@ -39,9 +40,12 @@ void AbstractSeriesManager::add(TSID tsid,
     auto hash = get_label_set_hash(labels);
     series_hash_map.emplace(hash, entryp);
 
-    // RefSeriesEntry rsent;
-    // sent_to_rsent(entryp, &rsent);
-    // write_entry(&rsent);
+    if (is_new) {
+        RefSeriesEntry rsent;
+        sent_to_rsent(entryp, &rsent);
+        // write_entry(&rsent);
+    }
+
     entryp->dirty = false;
 
     entryp->unlock();
@@ -157,5 +161,7 @@ void AbstractSeriesManager::rsent_to_sent(RefSeriesEntry* rsent,
         sent->labels.emplace_back(name, value);
     }
 }
+
+void AbstractSeriesManager::flush() { symtab.flush(); }
 
 } // namespace tagtree

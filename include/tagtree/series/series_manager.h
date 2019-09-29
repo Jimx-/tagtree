@@ -41,7 +41,8 @@ public:
 
     virtual size_t get_size() const = 0;
 
-    void add(TSID tsid, const std::vector<promql::Label>& labels);
+    void add(TSID tsid, const std::vector<promql::Label>& labels,
+             bool is_new = true);
     SeriesEntry* get(TSID tsid);
     SeriesEntry* get_by_label_set(const std::vector<promql::Label>& lset);
 
@@ -53,6 +54,8 @@ public:
     {
         return symtab.get_symbol(ref);
     }
+
+    void flush();
 
 protected:
     virtual bool read_entry(RefSeriesEntry* entry) = 0;

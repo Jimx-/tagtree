@@ -4,7 +4,9 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <iomanip>
 #include <ostream>
+#include <sstream>
 
 namespace tagtree {
 
@@ -63,8 +65,19 @@ public:
         return result;
     }
 
+    std::string to_string() const
+    {
+        std::stringstream ss;
+        ss << std::hex << std::setfill('0');
+        for (int i = 0; i < N; ++i) {
+            ss << std::setw(2) << static_cast<unsigned>(buffer[i]);
+        }
+        return ss.str();
+    }
+
     friend std::ostream& operator<<(std::ostream& out, const StringKey& k)
     {
+        out << k.to_string();
         return out;
     }
 
