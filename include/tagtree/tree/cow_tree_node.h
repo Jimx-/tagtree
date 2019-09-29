@@ -35,12 +35,11 @@ public:
     void set_parent(BaseCOWNode* parent) { this->parent = parent; }
     size_t get_size() const { return size; }
     void set_size(size_t size) { this->size = size; }
-    K get_high_key() const { return high_key; }
 
     virtual void serialize(uint8_t* buf, size_t size) const = 0;
     virtual void deserialize(const uint8_t* buf, size_t size) = 0;
 
-    virtual void get_values(const K& key, bool skip_last, bool collect,
+    virtual void get_values(const K& key, bool upper_bound, bool collect,
                             KeyListIterator* key_first,
                             KeyListIterator* key_last,
                             ValueListIterator& value_first,
@@ -62,7 +61,6 @@ protected:
     bool new_node;
     KeyComparator kcmp;
     KeyEq keq;
-    K high_key;
 };
 
 template <unsigned int N, typename K, typename V, typename KeySerializer,
@@ -104,11 +102,8 @@ public:
         *reinterpret_cast<uint32_t*>(buf) = (uint32_t)this->size;
         buf += sizeof(uint32_t);
         size -= sizeof(uint32_t);
-        size_t nbytes = key_serializer.serialize(buf, size, &this->high_key,
-                                                 (&this->high_key) + 1);
-        buf += nbytes;
-        size -= nbytes;
-        nbytes = key_serializer.serialize(buf, size, keys.begin(), keys.end());
+        size_t nbytes =
+            key_serializer.serialize(buf, size, keys.begin(), keys.end());
         buf += nbytes;
         size -= nbytes;
         ::memcpy(buf, child_pages.begin(), sizeof(bptree::PageID) * N);
@@ -118,11 +113,7 @@ public:
         this->size = (size_t) * reinterpret_cast<const uint32_t*>(buf);
         buf += sizeof(uint32_t);
         size -= sizeof(uint32_t);
-        size_t nbytes = key_serializer.deserialize(
-            &this->high_key, (&this->high_key) + 1, buf, size);
-        buf += nbytes;
-        size -= nbytes;
-        nbytes =
+        size_t nbytes =
             key_serializer.deserialize(keys.begin(), keys.end(), buf, size);
         buf += nbytes;
         size -= nbytes;
@@ -151,29 +142,30 @@ public:
     }
 
     virtual void
-    get_values(const K& key, bool skip_last, bool collect,
+    get_values(const K& key, bool upper_bound, bool collect,
                typename BaseNodeType::KeyListIterator* key_first,
                typename BaseNodeType::KeyListIterator* key_last,
                typename BaseNodeType::ValueListIterator& value_first,
                typename BaseNodeType::ValueListIterator& value_last)
     {
         /* direct the search to the child */
-        int child_idx =
-            std::upper_bound(keys.begin(), keys.begin() + this->size, key,
-                             this->kcmp) -
-            keys.begin();
-        auto child = get_child(child_idx);
-        auto skip = skip_last ? child->get_high_key() < key
-                              : child->get_high_key() <= key;
-
-        if (skip && child_idx != this->size) {
-            child_idx++;
-            child = get_child(child_idx);
+        int child_idx;
+        if (upper_bound) {
+            child_idx =
+                std::upper_bound(keys.begin(), keys.begin() + this->size, key,
+                                 this->kcmp) -
+                keys.begin();
+        } else {
+            child_idx =
+                std::lower_bound(keys.begin(), keys.begin() + this->size, key,
+                                 this->kcmp) -
+                keys.begin();
         }
 
+        auto child = get_child(child_idx);
         if (!child) return;
 
-        child->get_values(key, skip_last, collect, key_first, key_last,
+        child->get_values(key, upper_bound, collect, key_first, key_last,
                           value_first, value_last);
     }
 
@@ -194,10 +186,6 @@ public:
             std::upper_bound(new_node_ptr->keys.begin(),
                              new_node_ptr->keys.begin() + new_node_ptr->size,
                              key, new_node_ptr->kcmp);
-
-        if (key > new_node_ptr->get_high_key()) {
-            new_node_ptr->high_key = key;
-        }
 
         int child_idx = it - new_node_ptr->keys.begin();
         auto* child = new_node_ptr->get_child(child_idx);
@@ -257,10 +245,6 @@ public:
 
             split_key = new_node_ptr->keys[N / 2];
             new_node_ptr->size = N / 2;
-
-            auto* mid_child = new_node_ptr->get_child(new_node_ptr->size);
-            right_sibling->high_key = new_node_ptr->high_key;
-            new_node_ptr->high_key = mid_child->get_high_key();
         }
 
         return std::make_pair(new_node, right_sibling);
@@ -271,7 +255,6 @@ public:
         auto new_node = txn.template create_node<SelfType>(this->parent);
 
         new_node->size = this->size;
-        new_node->high_key = this->high_key;
         new_node->keys = keys;
         new_node->child_pages = child_pages;
         std::copy(child_cache.begin(), child_cache.begin() + this->size + 1,
@@ -332,11 +315,8 @@ public:
         *reinterpret_cast<uint32_t*>(buf) = (uint32_t)this->size;
         buf += sizeof(uint32_t);
         size -= sizeof(uint32_t);
-        size_t nbytes = key_serializer.serialize(buf, size, &this->high_key,
-                                                 (&this->high_key) + 1);
-        buf += nbytes;
-        size -= nbytes;
-        nbytes = key_serializer.serialize(buf, size, keys.begin(), keys.end());
+        size_t nbytes =
+            key_serializer.serialize(buf, size, keys.begin(), keys.end());
         buf += nbytes;
         size -= nbytes;
         nbytes =
@@ -347,11 +327,7 @@ public:
         this->size = (size_t) * reinterpret_cast<const uint32_t*>(buf);
         buf += sizeof(uint32_t);
         size -= sizeof(uint32_t);
-        size_t nbytes = key_serializer.deserialize(
-            &this->high_key, (&this->high_key) + 1, buf, size);
-        buf += nbytes;
-        size -= nbytes;
-        nbytes =
+        size_t nbytes =
             key_serializer.deserialize(keys.begin(), keys.end(), buf, size);
         buf += nbytes;
         size -= nbytes;
@@ -359,7 +335,7 @@ public:
                                               size);
     }
     virtual void
-    get_values(const K& key, bool skip_last, bool collect,
+    get_values(const K& key, bool upper_bound, bool collect,
                typename BaseNodeType::KeyListIterator* key_first,
                typename BaseNodeType::KeyListIterator* key_last,
                typename BaseNodeType::ValueListIterator& value_first,
@@ -430,7 +406,6 @@ public:
         new_node_ptr->keys[pos] = key;
         new_node_ptr->values[pos] = value;
         new_node_ptr->size++;
-        new_node_ptr->high_key = keys[new_node_ptr->size - 1];
 
         if (new_node_ptr->size == N) {
             right_sibling = txn.template create_node<SelfType>(this->parent);
@@ -443,11 +418,8 @@ public:
                      &new_node_ptr->values[N / 2],
                      right_sibling->size * sizeof(V));
 
-            split_key = new_node_ptr->keys[N / 2];
+            split_key = new_node_ptr->keys[N / 2 - 1];
             new_node_ptr->size = N / 2;
-
-            right_sibling->high_key = new_node_ptr->high_key;
-            new_node_ptr->high_key = new_node_ptr->keys[new_node_ptr->size - 1];
         }
 
         return std::make_pair(new_node, right_sibling);
@@ -458,7 +430,6 @@ public:
         auto new_node = txn.template create_node<SelfType>(this->parent);
 
         new_node->size = this->size;
-        new_node->high_key = this->high_key;
         new_node->keys = keys;
         new_node->values = values;
 
@@ -468,7 +439,6 @@ public:
     virtual void print(std::ostream& os, const std::string& padding = "")
     {
         os << padding << "Page ID: " << this->get_pid() << std::endl;
-        os << padding << "High key: " << this->high_key << std::endl;
 
         for (int i = 0; i < this->size; i++) {
             os << padding << keys[i] << " -> " << values[i] << std::endl;

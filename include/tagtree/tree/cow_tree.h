@@ -109,7 +109,7 @@ public:
         typename BaseNodeType::ValueListIterator value_first = nullptr,
                                                  value_last = nullptr;
         auto* root = get_read_tree(version);
-        root->get_values(key, true, false, nullptr, nullptr, value_first,
+        root->get_values(key, false, false, nullptr, nullptr, value_first,
                          value_last);
         value_list.assign(value_first, value_last);
     }
@@ -132,7 +132,6 @@ public:
                 nullptr);
 
             new_root->set_size(1);
-            new_root->high_key = right_sibling->get_high_key();
             new_root->keys[0] = split_key;
             new_root->child_pages[0] = root->get_pid();
             new_root->child_pages[1] = right_sibling->get_pid();
@@ -329,7 +328,7 @@ public:
             : tree(tree), kcmp(kcmp), version(version)
         {
             ended = false;
-            tree->collect_values(version, key, true, key_first, key_last,
+            tree->collect_values(version, key, false, key_first, key_last,
                                  value_first, value_last);
             auto it = std::lower_bound(key_first, key_last, key, kcmp);
             if (it == key_last) {
@@ -358,7 +357,7 @@ public:
         void get_next_batch()
         {
             K last_key = *key_first;
-            tree->collect_values(version, last_key, false, key_first, key_last,
+            tree->collect_values(version, last_key, true, key_first, key_last,
                                  value_first, value_last);
             auto it = std::upper_bound(key_first, key_last, last_key, kcmp);
             if (it == key_last) {
