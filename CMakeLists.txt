@@ -36,7 +36,6 @@ set(SOURCE_FILES
     ${TOPDIR}/src/index/index_server.cpp
     ${TOPDIR}/src/index/index_tree.cpp
     ${TOPDIR}/src/index/mem_index.cpp
-    ${TOPDIR}/src/series/btree_series_manager.cpp
     ${TOPDIR}/src/series/series_file.cpp
     ${TOPDIR}/src/series/series_file_manager.cpp
     ${TOPDIR}/src/series/series_manager.cpp
@@ -56,7 +55,6 @@ set(HEADER_FILES
     ${TOPDIR}/include/tagtree/index/index_server.h
     ${TOPDIR}/include/tagtree/index/index_tree.h
     ${TOPDIR}/include/tagtree/index/mem_index.h
-    ${TOPDIR}/include/tagtree/series/btree_series_manager.h
     ${TOPDIR}/include/tagtree/series/series_file.h
     ${TOPDIR}/include/tagtree/series/series_file_manager.h
     ${TOPDIR}/include/tagtree/series/series_manager.h

@@ -56,6 +56,7 @@ void MemIndex::resolve_label_matchers_unsafe(
 {
     bool first = true;
 
+    MemPostingList exclude;
     tsids = MemPostingList{};
 
     for (auto&& p : matchers) {
@@ -80,9 +81,58 @@ void MemIndex::resolve_label_matchers_unsafe(
             }
 
             if (tsids.isEmpty()) return;
-        }
 
-        first = false;
+            first = false;
+        } else if (p.op == promql::MatchOp::NEQ) {
+            auto name_it = map.find(p.name);
+            if (name_it == map.end()) {
+                continue;
+            }
+
+            auto& value_map = name_it->second;
+            auto value_it = value_map.find(p.value);
+            if (value_it == value_map.end()) {
+                continue;
+            }
+
+            exclude |= value_it->second;
+        } else {
+            MemPostingList postings;
+
+            get_matcher_postings(p, postings);
+
+            if (first) {
+                tsids = std::move(postings);
+            } else {
+                tsids &= postings;
+            }
+
+            if (tsids.isEmpty()) return;
+
+            first = false;
+        }
+    }
+
+    if (!exclude.isEmpty()) {
+        tsids = tsids - exclude;
+    }
+}
+
+void MemIndex::get_matcher_postings(const promql::LabelMatcher& matcher,
+                                    MemPostingList& tsids)
+{
+    tsids = {};
+
+    auto name_it = map.find(matcher.name);
+    if (name_it == map.end()) {
+        return;
+    }
+
+    auto& value_map = name_it->second;
+    for (auto&& p : value_map) {
+        if (!matcher.match_value(p.first)) continue;
+
+        tsids |= p.second;
     }
 }
 

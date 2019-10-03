@@ -52,6 +52,9 @@ private:
     void resolve_label_matchers_unsafe(
         const std::vector<promql::LabelMatcher>& matchers,
         MemPostingList& tsids);
+
+    void get_matcher_postings(const promql::LabelMatcher& matcher,
+                              MemPostingList& tsids);
 };
 
 } // namespace tagtree
