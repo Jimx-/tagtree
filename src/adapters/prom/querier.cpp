@@ -13,7 +13,7 @@ PromQuerier::PromQuerier(IndexedStorage* parent, uint64_t mint, uint64_t maxt)
 std::shared_ptr<promql::SeriesSet>
 PromQuerier::select(const std::vector<promql::LabelMatcher>& matchers)
 {
-    std::vector<TSID> tsids;
+    MemPostingList tsids;
     parent->get_index()->resolve_label_matchers(matchers, tsids);
 
     auto ss = querier->select(tsids);

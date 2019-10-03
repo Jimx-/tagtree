@@ -1,6 +1,7 @@
 #ifndef _TAGTREE_STORAGE_H_
 #define _TAGTREE_STORAGE_H_
 
+#include "tagtree/index/mem_index.h"
 #include "tagtree/tsid.h"
 
 #include <cstdint>
@@ -30,8 +31,7 @@ public:
 
 class Querier {
 public:
-    virtual std::shared_ptr<SeriesSet>
-    select(const std::vector<TSID>& tsids) = 0;
+    virtual std::shared_ptr<SeriesSet> select(const MemPostingList& tsids) = 0;
 };
 
 class Queryable {

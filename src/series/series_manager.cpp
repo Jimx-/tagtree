@@ -43,7 +43,7 @@ void AbstractSeriesManager::add(TSID tsid,
     if (is_new) {
         RefSeriesEntry rsent;
         sent_to_rsent(entryp, &rsent);
-        // write_entry(&rsent);
+        write_entry(&rsent);
     }
 
     entryp->dirty = false;
@@ -57,20 +57,22 @@ SeriesEntry* AbstractSeriesManager::get(TSID tsid)
 
     auto it = series_map.find(tsid);
     if (it == series_map.end()) {
-        // RefSeriesEntry rsent;
-        // rsent.tsid = tsid;
-        // if (!read_entry(&rsent)) {
-        //     return nullptr;
-        // }
+        RefSeriesEntry rsent;
+        rsent.tsid = tsid;
+        if (!read_entry(&rsent)) {
+            return nullptr;
+        }
 
-        // auto new_entry = get_entry();
-        // auto* entryp = new_entry.get();
-        // rsent_to_sent(&rsent, entryp);
+        auto new_entry = get_entry();
+        auto* entryp = new_entry.get();
+        rsent_to_sent(&rsent, entryp);
 
-        // lru_list.emplace_front(tsid, std::move(new_entry));
-        // series_map.emplace(tsid, lru_list.begin());
+        lru_list.emplace_front(tsid, std::move(new_entry));
+        series_map.emplace(tsid, lru_list.begin());
+        auto hash = get_label_set_hash(entryp->labels);
+        series_hash_map.emplace(hash, entryp);
 
-        // return entryp;
+        return entryp;
     }
 
     lru_list.splice(lru_list.begin(), lru_list, it->second);
@@ -120,14 +122,14 @@ std::unique_ptr<SeriesEntry> AbstractSeriesManager::get_entry()
         new_entry = std::move(lru_list.back().second);
 
         if (new_entry->dirty) {
-            // RefSeriesEntry rsent;
-            // sent_to_rsent(new_entry.get(), &rsent);
-            // write_entry(&rsent);
+            RefSeriesEntry rsent;
+            sent_to_rsent(new_entry.get(), &rsent);
+            write_entry(&rsent);
             new_entry->dirty = false;
         }
         series_map.erase(lru_list.back().first);
         auto hash = get_label_set_hash(new_entry->labels);
-        series_map.erase(hash);
+        series_hash_map.erase(hash);
         lru_list.pop_back();
     }
 

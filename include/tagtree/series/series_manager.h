@@ -39,8 +39,6 @@ class AbstractSeriesManager {
 public:
     AbstractSeriesManager(size_t cache_size);
 
-    virtual size_t get_size() const = 0;
-
     void add(TSID tsid, const std::vector<promql::Label>& labels,
              bool is_new = true);
     SeriesEntry* get(TSID tsid);
@@ -55,7 +53,7 @@ public:
         return symtab.get_symbol(ref);
     }
 
-    void flush();
+    virtual void flush();
 
 protected:
     virtual bool read_entry(RefSeriesEntry* entry) = 0;

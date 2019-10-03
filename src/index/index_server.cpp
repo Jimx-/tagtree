@@ -16,7 +16,7 @@ IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
       wal(std::string(index_dir) + "/wal")
 {
     series_manager = sm;
-    id_counter.store(sm->get_size() + 1);
+    id_counter.store(0);
     compacting.store(false, std::memory_order_relaxed);
     last_compaction_wm = 0;
 
@@ -67,6 +67,17 @@ void IndexServer::exists(const std::vector<promql::Label>& labels,
         /* if found also add it to the cache to speed up the next lookup */
         series_manager->add(*tsids.begin(), labels, false);
     }
+}
+
+void IndexServer::resolve_label_matchers(
+    const std::vector<promql::LabelMatcher>& matcher, MemPostingList& tsids)
+{
+    MemPostingList tree_postings, mem_postings;
+
+    mem_index.resolve_label_matchers(matcher, mem_postings);
+    index_tree.resolve_label_matchers(matcher, tree_postings);
+
+    tsids = tree_postings | mem_postings;
 }
 
 bool IndexServer::get_labels(TSID tsid, std::vector<promql::Label>& labels)

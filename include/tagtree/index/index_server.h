@@ -22,10 +22,9 @@ public:
 
     AbstractSeriesManager* get_series_manager() const { return series_manager; }
 
-    inline void
+    void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
-                           std::vector<TSID>& tsids)
-    {}
+                           MemPostingList& tsids);
 
     void exists(const std::vector<promql::Label>& labels,
                 MemPostingList& tsids);
