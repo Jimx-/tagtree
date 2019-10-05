@@ -12,7 +12,6 @@ include(FindSSE)
 if (TAGTREE_USE_AVX2 AND AVX2_FOUND)
    message(STATUS "AVX2 optimizations enabled")
    add_compile_options(-mavx2)
-   add_compile_options(-mavx512f)
    add_definitions(-D_TAGTREE_USE_AVX2_)
 endif (TAGTREE_USE_AVX2 AND AVX2_FOUND)
 
