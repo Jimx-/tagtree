@@ -291,6 +291,49 @@ void IndexTree::resolve_label_matchers(
     }
 }
 
+void IndexTree::label_values(const std::string& label_name,
+                             std::unordered_set<std::string>& values)
+{
+    KeyType start_key, end_key, name_mask;
+    uint8_t key_buf[KEY_WIDTH];
+
+    start_key = make_key(label_name, "", 0);
+
+    memset(key_buf, 0, sizeof(key_buf));
+    memset(key_buf, 0xff, NAME_BYTES);
+    pack_key(key_buf, name_mask);
+
+    memset(key_buf, 0, sizeof(key_buf));
+    key_buf[NAME_BYTES - 1] = 1;
+    pack_key(key_buf, end_key);
+    end_key = end_key + start_key;
+
+    start_key = start_key & name_mask;
+    end_key = end_key & name_mask;
+
+    auto it = cow_tree.begin(start_key);
+    while (it != cow_tree.end()) {
+        if (it->first >= end_key) {
+            break;
+        }
+
+        auto page_id = it->second;
+        boost::upgrade_lock<bptree::Page> lock;
+        auto page = page_cache->fetch_page(page_id, lock);
+        const uint8_t* p = page->get_buffer(lock);
+
+        promql::Label label;
+        read_page_metadata(p, label);
+
+        if (label.name == label_name) {
+            values.insert(label.value);
+        }
+
+        page_cache->unpin_page(page, false, lock);
+        it++;
+    }
+}
+
 void IndexTree::write_postings(
     TSID limit, const std::vector<LabeledPostings>& labeled_postings)
 {

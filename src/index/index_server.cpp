@@ -94,24 +94,10 @@ bool IndexServer::get_labels(TSID tsid, std::vector<promql::Label>& labels)
 void IndexServer::label_values(const std::string& label_name,
                                std::unordered_set<std::string>& values)
 {
-    // std::vector<TSID> tsids;
-    // std::vector<promql::Label> labels;
-    // index_tree.resolve_label_matchers({{MatchOp::NEQ, label_name, ""}},
-    // tsids);
+    values.clear();
 
-    // for (auto&& tsid : tsids) {
-    //     labels.clear();
-    //     auto* entry = series_manager->get(tsid);
-
-    //     for (auto&& p : entry->labels) {
-    //         if (p.name == label_name) {
-    //             values.insert(p.value);
-    //             break;
-    //         }
-    //     }
-
-    //     entry->unlock();
-    // }
+    mem_index.label_values(label_name, values);
+    index_tree.label_values(label_name, values);
 }
 
 void IndexServer::commit(const std::vector<SeriesRef>& series)

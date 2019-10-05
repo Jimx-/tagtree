@@ -54,6 +54,9 @@ public:
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
                            Roaring& postings);
 
+    void label_values(const std::string& label_name,
+                      std::unordered_set<std::string>& values);
+
 private:
     static const size_t NAME_BYTES = 6;
     static const size_t VALUE_BYTES = 8;

@@ -9,6 +9,7 @@
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace tagtree {
 
@@ -32,6 +33,9 @@ public:
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matchers,
                            MemPostingList& tsids);
+
+    void label_values(const std::string& label_name,
+                      std::unordered_set<std::string>& values);
 
     void set_low_watermark(TSID wm);
     void snapshot(TSID limit, std::vector<LabeledPostings>& labeled_postings);

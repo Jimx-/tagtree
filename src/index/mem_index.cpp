@@ -136,6 +136,19 @@ void MemIndex::get_matcher_postings(const promql::LabelMatcher& matcher,
     }
 }
 
+void MemIndex::label_values(const std::string& label_name,
+                            std::unordered_set<std::string>& values)
+{
+    std::shared_lock<std::shared_mutex> lock(mutex);
+
+    auto it = map.find(label_name);
+    if (it != map.end()) {
+        for (auto&& value : it->second) {
+            values.insert(value.first);
+        }
+    }
+}
+
 void MemIndex::snapshot(TSID limit,
                         std::vector<LabeledPostings>& labeled_postings)
 {
