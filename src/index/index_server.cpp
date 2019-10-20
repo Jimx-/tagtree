@@ -6,6 +6,9 @@
 #include <thread>
 #include <unordered_set>
 
+#include <chrono>
+typedef std::chrono::high_resolution_clock Clock;
+
 using promql::MatchOp;
 
 namespace tagtree {
@@ -23,15 +26,21 @@ IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
     replay_wal();
 }
 
-IndexServer::~IndexServer() { std::cout << id_counter.load() << std::endl; }
-
 TSID IndexServer::add_series(const std::vector<promql::Label>& labels)
 {
     TSID new_id;
+    bool ok;
 
     do {
         new_id = get_tsid();
-    } while (!mem_index.add(labels, new_id));
+        auto inserted_id = new_id;
+
+        ok = mem_index.add(labels, inserted_id);
+
+        if (inserted_id != new_id) {
+            return inserted_id;
+        }
+    } while (!ok);
 
     series_manager->add(new_id, labels);
 
@@ -197,7 +206,6 @@ void IndexServer::replay_wal()
     last_compaction_wm = high_watermark;
     mem_index.set_low_watermark(high_watermark);
     id_counter.store(high_watermark);
-    std::cout << high_watermark << std::endl;
 }
 
 } // namespace tagtree

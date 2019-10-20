@@ -28,7 +28,7 @@ class MemIndex {
 public:
     MemIndex(size_t capacity = 512);
 
-    bool add(const std::vector<promql::Label>& labels, TSID tsid);
+    bool add(const std::vector<promql::Label>& labels, TSID& tsid);
 
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matchers,

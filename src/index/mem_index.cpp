@@ -9,7 +9,7 @@ MemIndex::MemIndex(size_t capacity) : low_watermark(0)
     map.reserve(capacity);
 }
 
-bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid)
+bool MemIndex::add(const std::vector<promql::Label>& labels, TSID& tsid)
 {
     std::vector<promql::LabelMatcher> matchers;
     for (auto&& p : labels) {
@@ -27,7 +27,10 @@ bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid)
         MemPostingList tsids;
         resolve_label_matchers_unsafe(matchers, tsids);
 
-        if (!tsids.isEmpty()) return true;
+        if (!tsids.isEmpty()) {
+            tsid = *tsids.begin();
+            return true;
+        }
 
         for (auto&& p : labels) {
             add_label(p, tsid);

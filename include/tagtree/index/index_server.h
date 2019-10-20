@@ -18,8 +18,6 @@ public:
     IndexServer(std::string_view index_dir, size_t cache_size,
                 AbstractSeriesManager* sm);
 
-    ~IndexServer();
-
     AbstractSeriesManager* get_series_manager() const { return series_manager; }
 
     void
