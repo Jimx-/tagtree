@@ -1,7 +1,7 @@
 pipeline {
     agent {
         docker {
-            image 'rikorose/gcc-cmake:latest'
+            image 'farokhcpu/gcc-boost-cmake:latest'
             label 'linux && cpu'
         }
     }
