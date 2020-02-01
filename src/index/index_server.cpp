@@ -6,9 +6,6 @@
 #include <thread>
 #include <unordered_set>
 
-#include <chrono>
-typedef std::chrono::high_resolution_clock Clock;
-
 using promql::MatchOp;
 
 namespace tagtree {

@@ -36,6 +36,8 @@ public:
 
     void commit(const std::vector<SeriesRef>& series);
 
+    TSID current_tsid() const { return id_counter.load(); }
+
 private:
     MemIndex mem_index;
     IndexTree index_tree;
