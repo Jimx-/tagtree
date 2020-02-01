@@ -1,9 +1,6 @@
 pipeline {
     agent {
-        docker {
-            image 'farokhcpu/gcc-boost-cmake:latest'
-            label 'linux && cpu'
-        }
+        label 'linux && cpu'
     }
 
     stages {
