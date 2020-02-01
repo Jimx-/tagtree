@@ -16,12 +16,10 @@ public:
     virtual void flush();
 
 private:
-    std::string series_dir;
     size_t segment_size;
     std::mutex mutex;
     std::unordered_map<unsigned int, std::unique_ptr<SeriesFile>> series_files;
 
-    void init_series_dir();
     std::string get_series_filename(size_t seg);
     std::pair<unsigned int, unsigned int> get_series_seg_index(TSID tsid);
 

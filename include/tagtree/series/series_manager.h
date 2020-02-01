@@ -37,7 +37,7 @@ struct RefSeriesEntry {
 
 class AbstractSeriesManager {
 public:
-    AbstractSeriesManager(size_t cache_size);
+    AbstractSeriesManager(size_t cache_size, std::string_view series_dir);
 
     void add(TSID tsid, const std::vector<promql::Label>& labels,
              bool is_new = true);
@@ -56,6 +56,8 @@ public:
     virtual void flush();
 
 protected:
+    std::string series_dir;
+
     virtual bool read_entry(RefSeriesEntry* entry) = 0;
     virtual void write_entry(RefSeriesEntry* entry) = 0;
 
@@ -71,6 +73,8 @@ private:
     std::unordered_map<uint64_t, SeriesEntry*> series_hash_map;
 
     std::unique_ptr<SeriesEntry> get_entry();
+
+    void init_series_dir();
 
     void sent_to_rsent(SeriesEntry* sent, RefSeriesEntry* rsent);
     void rsent_to_sent(RefSeriesEntry* rsent, SeriesEntry* sent);
