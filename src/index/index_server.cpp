@@ -76,14 +76,44 @@ void IndexServer::exists(const std::vector<promql::Label>& labels,
 }
 
 void IndexServer::resolve_label_matchers(
-    const std::vector<promql::LabelMatcher>& matcher, MemPostingList& tsids)
+    const std::vector<promql::LabelMatcher>& matchers, MemPostingList& tsids)
 {
+    std::vector<promql::Label> labels;
     MemPostingList tree_postings, mem_postings;
 
-    mem_index.resolve_label_matchers(matcher, mem_postings);
-    index_tree.resolve_label_matchers(matcher, tree_postings);
+    bool equal_pred = true;
+    for (auto&& matcher : matchers) {
+        if (matcher.op != promql::MatchOp::EQL) {
+            equal_pred = false;
+            break;
+        }
+
+        labels.push_back({matcher.name, matcher.value});
+    }
+
+    if (equal_pred) {
+        auto entry = series_manager->get_by_label_set(labels);
+
+        if (entry) {
+            tsids = MemPostingList();
+            tsids.add(entry->tsid);
+            entry->unlock();
+            return;
+        }
+    }
+
+    mem_index.resolve_label_matchers(matchers, mem_postings);
+    index_tree.resolve_label_matchers(matchers, tree_postings);
 
     tsids = tree_postings | mem_postings;
+
+    if (tsids.cardinality() == 1) {
+        // touch the series entry to load it into cache
+        auto entry = series_manager->get(*tsids.begin());
+        if (entry) {
+            entry->unlock();
+        }
+    }
 }
 
 bool IndexServer::get_labels(TSID tsid, std::vector<promql::Label>& labels)

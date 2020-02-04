@@ -21,7 +21,7 @@ public:
     AbstractSeriesManager* get_series_manager() const { return series_manager; }
 
     void
-    resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
+    resolve_label_matchers(const std::vector<promql::LabelMatcher>& matchers,
                            MemPostingList& tsids);
 
     void exists(const std::vector<promql::Label>& labels,

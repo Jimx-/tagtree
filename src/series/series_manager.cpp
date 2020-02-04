@@ -125,7 +125,7 @@ AbstractSeriesManager::get_by_label_set(const std::vector<promql::Label>& lset)
 
     auto it1 = lset.begin();
     auto it2 = entry->labels.begin();
-    for (; it1 != lset.begin(); it++, it2++) {
+    for (; it1 != lset.end(); it1++, it2++) {
         if (it1->name != it2->name || it1->value != it2->value) {
             return nullptr;
         }
