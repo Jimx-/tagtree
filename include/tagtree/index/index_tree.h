@@ -7,6 +7,8 @@
 #include "tagtree/index/string_key.h"
 #endif
 
+#include "tagtree/index/tuple_key.h"
+
 #include "bptree/page_cache.h"
 #include "bptree/tree.h"
 #include "promql/labels.h"
