@@ -14,9 +14,10 @@ enum LogRecordType {
 struct SeriesRef {
     TSID tsid;
     std::vector<promql::Label> labels;
+    uint64_t timestamp;
 
-    SeriesRef(TSID tsid, const std::vector<promql::Label> labels)
-        : tsid(tsid), labels(labels)
+    SeriesRef(TSID tsid, const std::vector<promql::Label> labels, uint64_t t)
+        : tsid(tsid), labels(labels), timestamp(t)
     {}
 };
 

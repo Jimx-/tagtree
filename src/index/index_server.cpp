@@ -25,13 +25,14 @@ IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
 
 IndexServer::~IndexServer() { std::cout << id_counter.load() << std::endl; }
 
-TSID IndexServer::add_series(const std::vector<promql::Label>& labels)
+TSID IndexServer::add_series(uint64_t t,
+                             const std::vector<promql::Label>& labels)
 {
     TSID new_id;
 
     do {
         new_id = get_tsid();
-    } while (!mem_index.add(labels, new_id));
+    } while (!mem_index.add(labels, new_id, t));
 
     series_manager->add(new_id, labels);
 
@@ -182,7 +183,7 @@ void IndexServer::replay_wal()
                     exists(p.labels, postings);
 
                     if (postings.isEmpty()) {
-                        mem_index.add(p.labels, p.tsid);
+                        mem_index.add(p.labels, p.tsid, p.timestamp);
                         series_manager->add(p.tsid, p.labels);
                     }
                 }

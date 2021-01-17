@@ -9,7 +9,8 @@ MemIndex::MemIndex(size_t capacity) : low_watermark(0)
     map.reserve(capacity);
 }
 
-bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid)
+bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid,
+                   uint64_t timestamp)
 {
     std::vector<promql::LabelMatcher> matchers;
     for (auto&& p : labels) {
@@ -30,7 +31,7 @@ bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid)
         if (!tsids.isEmpty()) return true;
 
         for (auto&& p : labels) {
-            add_label(p, tsid);
+            add_label(p, tsid, timestamp);
         }
     }
 
@@ -75,9 +76,9 @@ void MemIndex::resolve_label_matchers_unsafe(
             }
 
             if (first) {
-                tsids = value_it->second;
+                tsids = value_it->second.bitmap;
             } else {
-                tsids &= value_it->second;
+                tsids &= value_it->second.bitmap;
             }
 
             if (tsids.isEmpty()) return;
@@ -95,7 +96,7 @@ void MemIndex::resolve_label_matchers_unsafe(
                 continue;
             }
 
-            exclude |= value_it->second;
+            exclude |= value_it->second.bitmap;
         } else {
             MemPostingList postings;
 
@@ -132,7 +133,7 @@ void MemIndex::get_matcher_postings(const promql::LabelMatcher& matcher,
     for (auto&& p : value_map) {
         if (!matcher.match_value(p.first)) continue;
 
-        tsids |= p.second;
+        tsids |= p.second.bitmap;
     }
 }
 
@@ -156,7 +157,7 @@ void MemIndex::snapshot(TSID limit,
 
     for (auto&& name : map) {
         for (auto&& value : name.second) {
-            auto& bitmap = value.second;
+            auto& bitmap = value.second.bitmap;
 
             if (bitmap.isEmpty()) continue;
 
@@ -170,9 +171,10 @@ void MemIndex::snapshot(TSID limit,
     }
 }
 
-void MemIndex::add_label(const promql::Label& label, TSID tsid)
+void MemIndex::add_label(const promql::Label& label, TSID tsid,
+                         uint64_t timestamp)
 {
-    map[label.name][label.value].add(tsid);
+    map[label.name][label.value].add(tsid, timestamp);
 }
 
 void MemIndex::gc()
@@ -184,22 +186,32 @@ void MemIndex::gc()
         auto& name_map = name_it->second;
 
         for (auto value_it = name_map.begin(); value_it != name_map.end();) {
-            auto& posting = value_it->second;
+            auto& bitmap = value_it->second.bitmap;
+            auto& series_set = value_it->second.series_set;
 
-            auto last_it = posting.begin();
+            auto last_it = bitmap.begin();
             last_it.equalorlarger(low_watermark);
 
-            if (last_it == posting.end()) {
+            if (last_it == bitmap.end()) {
                 value_it = name_map.erase(value_it);
                 continue;
             }
 
-            MemPostingList new_posting;
-            for (; last_it != posting.end(); last_it++) {
-                new_posting.add(*last_it);
+            MemPostingList new_bitmap;
+            for (; last_it != bitmap.end(); last_it++) {
+                new_bitmap.add(*last_it);
             }
 
-            posting = std::move(new_posting);
+            value_it->second.bitmap = std::move(new_bitmap);
+
+            std::set<std::tuple<uint64_t, TSID>> new_set;
+            for (auto&& p : series_set) {
+                if (std::get<1>(p) >= low_watermark) {
+                    new_set.insert(p);
+                }
+            }
+
+            value_it->second.series_set = new_set;
 
             value_it++;
         }

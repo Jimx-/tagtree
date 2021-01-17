@@ -24,8 +24,8 @@ void PromAppender::add(const std::vector<promql::Label>& labels, uint64_t t,
 
     TSID tsid;
     if (!tsids.cardinality()) {
-        tsid = parent->get_index()->add_series(labels);
-        series.emplace_back(tsid, labels);
+        tsid = parent->get_index()->add_series(t, labels);
+        series.emplace_back(tsid, labels, t);
     } else {
         tsid = *tsids.begin();
     }

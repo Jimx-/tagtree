@@ -38,6 +38,8 @@ void RecordSerializer::serialize_series(const std::vector<SeriesRef>& series,
     for (auto&& p : series) {
         *(TSID*)pb = p.tsid;
         pb += sizeof(TSID);
+        *(uint64_t*)pb = p.timestamp;
+        pb += sizeof(uint64_t);
         *(uint16_t*)pb = p.labels.size();
         pb += sizeof(uint16_t);
 
@@ -67,6 +69,8 @@ void RecordSerializer::deserialize_series(const std::vector<uint8_t>& buf,
     while (pb < lim) {
         TSID tsid = *(TSID*)pb;
         pb += sizeof(TSID);
+        uint64_t timestamp = *(uint64_t*)pb;
+        pb += sizeof(uint64_t);
         uint16_t length = *(uint16_t*)pb;
         pb += sizeof(uint16_t);
 
@@ -86,7 +90,7 @@ void RecordSerializer::deserialize_series(const std::vector<uint8_t>& buf,
             labels.emplace_back(name, value);
         }
 
-        series.emplace_back(tsid, std::move(labels));
+        series.emplace_back(tsid, std::move(labels), timestamp);
     }
 }
 

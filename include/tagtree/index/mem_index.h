@@ -2,6 +2,7 @@
 #define _TAGTREE_MEM_INDEX_H_
 
 #include "promql/labels.h"
+#include "tagtree/index/mem_postings.h"
 #include "tagtree/tsid.h"
 
 #include "roaring.hh"
@@ -17,7 +18,7 @@ using MemPostingList = Roaring;
 
 struct LabeledPostings {
     promql::Label label;
-    MemPostingList postings;
+    Roaring postings;
 
     LabeledPostings(const std::string& name, const std::string& value)
         : label(name, value)
@@ -28,7 +29,8 @@ class MemIndex {
 public:
     MemIndex(size_t capacity = 512);
 
-    bool add(const std::vector<promql::Label>& labels, TSID tsid);
+    bool add(const std::vector<promql::Label>& labels, TSID tsid,
+             uint64_t timestamp);
 
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matchers,
@@ -45,13 +47,13 @@ public:
 private:
     using MemMapType =
         std::unordered_map<std::string,
-                           std::unordered_map<std::string, MemPostingList>>;
+                           std::unordered_map<std::string, MemPostings>>;
 
     MemMapType map;
     std::shared_mutex mutex;
     TSID low_watermark;
 
-    void add_label(const promql::Label& label, TSID tsid);
+    void add_label(const promql::Label& label, TSID tsid, uint64_t timestamp);
 
     void resolve_label_matchers_unsafe(
         const std::vector<promql::LabelMatcher>& matchers,
