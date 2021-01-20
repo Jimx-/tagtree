@@ -108,6 +108,11 @@ void IndexServer::commit(const std::vector<SeriesRef>& series)
 
     wal.log_record(&buf[0], buf.size(), true);
 
+    try_compact(true);
+}
+
+bool IndexServer::try_compact(bool detach)
+{
     if (compactable(id_counter.load()) &&
         !compacting.load(std::memory_order_acquire)) {
         std::lock_guard<std::mutex> lock(compaction_mutex);
@@ -118,11 +123,22 @@ void IndexServer::commit(const std::vector<SeriesRef>& series)
             compacting.store(true, std::memory_order_relaxed);
             last_compaction_wm = current_id;
 
-            auto t = std::thread([this, current_id] { compact(current_id); });
-            t.detach();
+            if (detach) {
+                auto t =
+                    std::thread([this, current_id] { compact(current_id); });
+                t.detach();
+            } else {
+                compact(current_id);
+            }
+
+            return true;
         }
     }
+
+    return false;
 }
+
+void IndexServer::manual_compact() { try_compact(false); }
 
 bool IndexServer::compactable(TSID current_id)
 {

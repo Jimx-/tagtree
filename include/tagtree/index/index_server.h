@@ -38,6 +38,8 @@ public:
 
     void commit(const std::vector<SeriesRef>& series);
 
+    void manual_compact();
+
 private:
     MemIndex mem_index;
     IndexTree index_tree;
@@ -52,6 +54,7 @@ private:
     inline TSID get_tsid() { return id_counter.fetch_add(1); }
 
     inline bool compactable(TSID current_id);
+    bool try_compact(bool detach);
     void compact(TSID current_id);
 
     void replay_wal();
