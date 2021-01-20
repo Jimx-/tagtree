@@ -24,11 +24,11 @@ template <int N, int align> constexpr int roundup()
 
 }; // namespace detail
 
-template <size_t KN, size_t VN> class TupleKey {
-    friend class std::hash<TupleKey<KN, VN>>;
+template <size_t KN, size_t VN, size_t SN> class TupleKey {
+    friend class std::hash<TupleKey<KN, VN, SN>>;
 
 public:
-    static const size_t KEY_LENGTH = KN + 8 + VN;
+    static const size_t KEY_LENGTH = KN + VN + 8 + SN;
 
     TupleKey() { ::memset(buf, 0, sizeof(buf)); }
     TupleKey(const uint8_t* data)
@@ -40,17 +40,25 @@ public:
     void get_bytes(uint8_t* data) const { ::memcpy(data, buf, KEY_LENGTH); }
 
     void get_tag_key(uint8_t* data) const { ::memcpy(data, buf, KN); }
-    void get_tag_value(uint8_t* data) const
+    void get_tag_value(uint8_t* data) const { ::memcpy(data, &buf[KN], VN); }
+    uint64_t get_timestamp() const { return *(uint64_t*)&buf[KN + VN]; }
+    unsigned int get_segnum() const
     {
-        ::memcpy(data, &buf[KN + 8], VN);
+        return *(unsigned int*)&buf[KN + VN + 8];
     }
-    uint64_t get_timestamp() const { return *(uint64_t*)&buf[KN]; }
 
     void set_tag_key(uint8_t* data) { ::memcpy(buf, data, KN); }
-    void set_tag_value(uint8_t* data) { ::memcpy(&buf[KN + 8], data, VN); }
-    void set_timestamp(uint64_t timestamp) { *(uint64_t*)&buf[KN] = timestamp; }
+    void set_tag_value(uint8_t* data) { ::memcpy(&buf[KN], data, VN); }
+    void set_timestamp(uint64_t timestamp)
+    {
+        *(uint64_t*)&buf[KN + VN] = timestamp;
+    }
+    void set_segnum(unsigned int seg)
+    {
+        *(unsigned int*)&buf[KN + VN + 8] = seg;
+    }
 
-    bool operator==(const TupleKey<KN, VN>& rhs) const
+    bool operator==(const TupleKey<KN, VN, SN>& rhs) const
     {
         for (int i = 0; i < BUF_LENGTH; i += 16) {
             __m128i a, b;
@@ -62,30 +70,32 @@ public:
         return true;
     }
 
-    bool operator!=(const TupleKey<KN, VN>& rhs) const
+    bool operator!=(const TupleKey<KN, VN, SN>& rhs) const
     {
         return !(*this == rhs);
     }
 
-    bool operator<(const TupleKey<KN, VN>& rhs) const
+    bool operator<(const TupleKey<KN, VN, SN>& rhs) const
     {
         if (memcmp(buf, rhs.buf, KN) < 0) return true;
-        if (get_timestamp() > rhs.get_timestamp()) return true;
-        return memcpy(&buf[KN + 8], &rhs.buf[KN + 8], VN) < 0;
+        if (memcmp(&buf[KN], &rhs.buf[KN], VN) < 0) return true;
+        if (get_timestamp() < rhs.get_timestamp()) return true;
+        return get_segnum() < rhs.get_segnum();
     }
 
-    bool operator>(const TupleKey<KN, VN>& rhs) const
+    bool operator>(const TupleKey<KN, VN, SN>& rhs) const
     {
         if (memcmp(buf, rhs.buf, KN) > 0) return true;
-        if (get_timestamp() < rhs.get_timestamp()) return true;
-        return memcpy(&buf[KN + 8], &rhs.buf[KN + 8], VN) > 0;
+        if (memcmp(&buf[KN], &rhs.buf[KN], VN) > 0) return true;
+        if (get_timestamp() > rhs.get_timestamp()) return true;
+        return get_segnum() > rhs.get_segnum();
     }
 
-    bool operator>=(const TupleKey<KN, VN>& rhs) const
+    bool operator>=(const TupleKey<KN, VN, SN>& rhs) const
     {
         return !(*this < rhs);
     }
-    bool operator<=(const TupleKey<KN, VN>& rhs) const
+    bool operator<=(const TupleKey<KN, VN, SN>& rhs) const
     {
         return !(*this > rhs);
     }
@@ -101,7 +111,7 @@ public:
     }
 
     friend std::ostream& operator<<(std::ostream& out,
-                                    const TupleKey<KN, VN>& k)
+                                    const TupleKey<KN, VN, SN>& k)
     {
         out << k.to_string();
         return out;
@@ -117,13 +127,14 @@ private:
 
 namespace std {
 
-template <size_t KN, size_t VN> class hash<tagtree::TupleKey<KN, VN>> {
+template <size_t KN, size_t VN, size_t SN>
+class hash<tagtree::TupleKey<KN, VN, SN>> {
 public:
-    size_t operator()(const tagtree::TupleKey<KN, VN>& sk) const
+    size_t operator()(const tagtree::TupleKey<KN, VN, SN>& sk) const
     {
         size_t h1 = std::hash<std::string>()(
             std::string(reinterpret_cast<const char*>(&sk.buf),
-                        tagtree::TupleKey<KN, VN>::KEY_LENGTH));
+                        tagtree::TupleKey<KN, VN, SN>::KEY_LENGTH));
         return h1;
     }
 };
