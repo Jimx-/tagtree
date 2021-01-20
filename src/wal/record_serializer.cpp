@@ -22,7 +22,7 @@ void RecordSerializer::serialize_series(const std::vector<SeriesRef>& series,
     size_t bufsize = 0;
     bufsize += sizeof(uint32_t);
     for (auto&& p : series) {
-        bufsize += sizeof(TSID) + sizeof(uint16_t) +
+        bufsize += sizeof(TSID) + sizeof(uint64_t) + sizeof(uint16_t) +
                    (p.labels.size() * 2 * sizeof(uint16_t));
         for (auto&& label : p.labels) {
             bufsize += label.name.size() + label.value.size();

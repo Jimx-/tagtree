@@ -56,9 +56,14 @@ void MemIndex::resolve_label_matchers_unsafe(
     const std::vector<promql::LabelMatcher>& matchers, MemPostingList& tsids)
 {
     bool first = true;
-
     MemPostingList exclude;
+    int positive_matchers = 0;
+
     tsids = MemPostingList{};
+
+    for (auto&& p : matchers) {
+        if (p.op != promql::MatchOp::NEQ) positive_matchers++;
+    }
 
     for (auto&& p : matchers) {
         if (p.op == promql::MatchOp::EQL) {
@@ -91,12 +96,21 @@ void MemIndex::resolve_label_matchers_unsafe(
             }
 
             auto& value_map = name_it->second;
-            auto value_it = value_map.find(p.value);
-            if (value_it == value_map.end()) {
-                continue;
-            }
 
-            exclude |= value_it->second.bitmap;
+            if (!positive_matchers) {
+                for (auto&& val : value_map) {
+                    if (val.first != p.value) {
+                        tsids |= val.second.bitmap;
+                    }
+                }
+            } else {
+                auto value_it = value_map.find(p.value);
+                if (value_it == value_map.end()) {
+                    continue;
+                }
+
+                exclude |= value_it->second.bitmap;
+            }
         } else {
             MemPostingList postings;
 

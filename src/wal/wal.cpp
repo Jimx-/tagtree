@@ -115,7 +115,7 @@ void WAL::create_segment(size_t seg)
 {
     auto filename = get_seg_filename(seg);
 
-    int fd = ::open(filename.c_str(), O_RDWR | O_CREAT | O_EXCL | O_DIRECT,
+    int fd = ::open(filename.c_str(), O_RDWR | O_CREAT | O_EXCL,
                     S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
     if (fd == -1) {
@@ -145,7 +145,7 @@ void WAL::open_write_segment(size_t seg)
 
     std::string filename = get_seg_filename(seg);
 
-    last_segment_fd = ::open(filename.c_str(), O_WRONLY | O_DIRECT);
+    last_segment_fd = ::open(filename.c_str(), O_WRONLY);
 
     if (last_segment_fd == -1) {
         throw std::runtime_error("failed to open segment");
