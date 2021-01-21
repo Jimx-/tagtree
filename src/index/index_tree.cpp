@@ -11,48 +11,17 @@ using promql::MatchOp;
 
 namespace tagtree {
 
-template <>
-void IndexTree::pack_key<uint64_t>(const uint8_t* buf, uint64_t& key)
+static void incr_buf(uint8_t* buf, size_t len)
 {
-    key = 0;
-    for (int i = KEY_WIDTH - 1; i >= 0; i--) {
-        key |= ((uint64_t)(*buf++) << (i << 3));
+    int i = len - 1;
+    uint32_t carry = 1;
+
+    while (carry && i >= 0) {
+        uint32_t s = (uint32_t)buf[i] + carry;
+        buf[i] = s & 0xff;
+        carry = (s >> 8) & 0xff;
+        i--;
     }
-}
-
-template <>
-void IndexTree::pack_key<StringKey<IndexTree::KEY_WIDTH>>(
-    const uint8_t* buf, StringKey<IndexTree::KEY_WIDTH>& key)
-{
-    key = StringKey<KEY_WIDTH>(buf);
-}
-
-template <> unsigned int IndexTree::get_segsel<uint64_t>(const uint64_t& key)
-{
-    return key & ((1 << (SEGSEL_BYTES * 8)) - 1);
-}
-
-template <>
-unsigned int IndexTree::get_segsel<StringKey<IndexTree::KEY_WIDTH>>(
-    const StringKey<IndexTree::KEY_WIDTH>& key)
-{
-    unsigned int segsel = 0;
-    uint8_t buf[IndexTree::KEY_WIDTH];
-    key.get_bytes(buf);
-
-    for (int i = SEGSEL_BYTES - 1; i >= 0; i--) {
-        segsel |= (buf[IndexTree::KEY_WIDTH - 1 - i] << (i << 3));
-    }
-
-    return segsel;
-}
-
-template <> void IndexTree::clear_key<uint64_t>(uint64_t& key) { key = 0; }
-template <>
-void IndexTree::clear_key<StringKey<IndexTree::KEY_WIDTH>>(
-    StringKey<IndexTree::KEY_WIDTH>& key)
-{
-    key = StringKey<KEY_WIDTH>();
 }
 
 IndexTree::IndexTree(IndexServer* server, std::string_view filename,
@@ -72,21 +41,13 @@ void IndexTree::query_postings(
     std::map<unsigned int, std::unique_ptr<uint8_t[]>>& bitmaps,
     const std::set<unsigned int>& seg_mask)
 {
-    KeyType start_key, end_key, match_key, name_mask, name_value_mask;
-    uint8_t key_buf[KEY_WIDTH];
+    KeyType start_key, end_key, match_key;
+    uint8_t name_buf[NAME_BYTES];
     auto op = matcher.op;
     auto name = matcher.name;
     auto value = matcher.value;
 
-    clear_key(start_key);
     match_key = make_key(name, value, 0);
-
-    memset(key_buf, 0, sizeof(key_buf));
-    memset(key_buf, 0xff, NAME_BYTES);
-    pack_key(key_buf, name_mask);
-    memset(key_buf, 0, sizeof(key_buf));
-    memset(key_buf, 0xff, NAME_BYTES + VALUE_BYTES);
-    pack_key(key_buf, name_value_mask);
 
     switch (op) {
     case MatchOp::EQL:
@@ -117,13 +78,12 @@ void IndexTree::query_postings(
         {
             start_key = make_key(name, value, 0);
 
-            memset(key_buf, 0, sizeof(key_buf));
-            key_buf[NAME_BYTES - 1] = 1;
-            pack_key(key_buf, end_key);
-            end_key = end_key + start_key;
+            start_key.get_tag_name(name_buf);
+            incr_buf(name_buf, NAME_BYTES);
+            end_key.set_tag_name(name_buf);
 
-            start_key = start_key & name_mask;
-            end_key = end_key & name_mask;
+            start_key.clear_tag_value();
+            end_key.clear_tag_value();
 
             if (op == MatchOp::LSS || op == MatchOp::LTE) {
                 end_key = match_key;
@@ -145,15 +105,19 @@ void IndexTree::query_postings(
                 goto out;
             }
             break;
-        case MatchOp::NEQ:
+        case MatchOp::NEQ: {
+            KeyType name_value_part = it->first;
+            name_value_part.set_timestamp(0);
+            name_value_part.set_segnum(0);
+
             if (it->first >= end_key) {
                 goto out;
-            } else if ((it->first & name_value_mask) == match_key) {
+            } else if (name_value_part == match_key) {
                 it++;
                 continue;
             }
-
             break;
+        }
         case MatchOp::GTR:
             if (it->first == start_key) {
                 it++;
@@ -166,11 +130,16 @@ void IndexTree::query_postings(
                 goto out;
             }
             break;
-        case MatchOp::LTE:
-            if ((it->first & name_value_mask) > end_key) {
+        case MatchOp::LTE: {
+            KeyType name_value_part = it->first;
+            name_value_part.set_timestamp(0);
+            name_value_part.set_segnum(0);
+
+            if (name_value_part > end_key) {
                 goto out;
             }
             break;
+        }
         case MatchOp::EQL_REGEX:
         case MatchOp::NEQ_REGEX:
             if (it->first >= end_key) {
@@ -181,7 +150,7 @@ void IndexTree::query_postings(
             break;
         }
 
-        unsigned int segsel = get_segsel(it->first);
+        unsigned int segsel = it->first.get_segnum();
 
         if (!seg_mask.empty() && seg_mask.find(segsel) == seg_mask.end()) {
             it++;
@@ -294,22 +263,17 @@ void IndexTree::resolve_label_matchers(
 void IndexTree::label_values(const std::string& label_name,
                              std::unordered_set<std::string>& values)
 {
-    KeyType start_key, end_key, name_mask;
-    uint8_t key_buf[KEY_WIDTH];
+    KeyType start_key, end_key;
+    uint8_t name_buf[NAME_BYTES];
 
     start_key = make_key(label_name, "", 0);
 
-    memset(key_buf, 0, sizeof(key_buf));
-    memset(key_buf, 0xff, NAME_BYTES);
-    pack_key(key_buf, name_mask);
+    start_key.get_tag_name(name_buf);
+    incr_buf(name_buf, NAME_BYTES);
+    end_key.set_tag_name(name_buf);
 
-    memset(key_buf, 0, sizeof(key_buf));
-    key_buf[NAME_BYTES - 1] = 1;
-    pack_key(key_buf, end_key);
-    end_key = end_key + start_key;
-
-    start_key = start_key & name_mask;
-    end_key = end_key & name_mask;
+    start_key.clear_tag_value();
+    end_key.clear_tag_value();
 
     auto it = cow_tree.begin(start_key);
     while (it != cow_tree.end()) {
@@ -523,15 +487,20 @@ IndexTree::KeyType IndexTree::make_key(const std::string& name,
                                        const std::string& value,
                                        unsigned int segsel)
 {
-    uint8_t key_buf[KEY_WIDTH];
-    memset(key_buf, 0, sizeof(key_buf));
-
-    _hash_string_name(name, key_buf);
-    _hash_string_value(value, &key_buf[NAME_BYTES]);
-    _hash_segsel(segsel, &key_buf[NAME_BYTES + VALUE_BYTES]);
-
     KeyType key;
-    pack_key(key_buf, key);
+    uint8_t name_buf[NAME_BYTES];
+    uint8_t value_buf[VALUE_BYTES];
+
+    memset(name_buf, 0, sizeof(name_buf));
+    memset(value_buf, 0, sizeof(value_buf));
+
+    _hash_string_name(name, name_buf);
+    _hash_string_value(value, value_buf);
+
+    key.set_tag_name(name_buf);
+    key.set_tag_value(value_buf);
+    key.set_timestamp(0);
+    key.set_segnum(segsel);
 
     return key;
 }
