@@ -40,7 +40,7 @@ public:
 
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
-                           Roaring& postings);
+                           uint64_t start, uint64_t end, Roaring& postings);
 
     void label_values(const std::string& label_name,
                       std::unordered_set<std::string>& values);
@@ -71,20 +71,20 @@ private:
     bptree::Page* create_posting_page(const promql::Label& label,
                                       boost::upgrade_lock<bptree::Page>& lock);
 
-    bptree::PageID write_posting_page(const std::string& name,
-                                      const std::string& value,
-                                      unsigned int segsel,
-                                      const RoaringSetBitForwardIterator& first,
-                                      const RoaringSetBitForwardIterator& last,
-                                      bool& updated);
+    bptree::PageID
+    write_posting_page(const std::string& name, const std::string& value,
+                       uint64_t start_timestamp, unsigned int segsel,
+                       const RoaringSetBitForwardIterator& first,
+                       const RoaringSetBitForwardIterator& last, bool& updated);
 
     void
-    query_postings(const promql::LabelMatcher& matcher,
+    query_postings(const promql::LabelMatcher& matcher, uint64_t start,
+                   uint64_t end,
                    std::map<unsigned int, std::unique_ptr<uint8_t[]>>& bitmaps,
                    const std::set<unsigned int>& seg_mask);
 
     KeyType make_key(const std::string& name, const std::string& value,
-                     unsigned int segsel);
+                     uint64_t start_time, unsigned int segsel);
 
     void _hash_string_name(const std::string& str, uint8_t* out);
     void _hash_string_value(const std::string& str, uint8_t* out);

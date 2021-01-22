@@ -177,7 +177,8 @@ void MemIndex::snapshot(TSID limit,
 
             if (bitmap.minimum() > limit) continue;
 
-            labeled_postings.emplace_back(name.first, value.first);
+            labeled_postings.emplace_back(name.first, value.first,
+                                          value.second.min_timestamp);
             auto& new_bitmap = labeled_postings.back().postings;
             new_bitmap = bitmap;
             new_bitmap.runOptimize();
@@ -219,13 +220,16 @@ void MemIndex::gc()
             value_it->second.bitmap = std::move(new_bitmap);
 
             std::set<std::tuple<uint64_t, TSID>> new_set;
+            uint64_t min_timestamp = UINT64_MAX;
             for (auto&& p : series_set) {
                 if (std::get<1>(p) >= low_watermark) {
                     new_set.insert(p);
+                    min_timestamp = std::min(min_timestamp, std::get<0>(p));
                 }
             }
 
             value_it->second.series_set = new_set;
+            value_it->second.min_timestamp = min_timestamp;
 
             value_it++;
         }

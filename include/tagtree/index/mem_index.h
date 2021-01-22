@@ -19,9 +19,11 @@ using MemPostingList = Roaring;
 struct LabeledPostings {
     promql::Label label;
     Roaring postings;
+    uint64_t min_timestamp;
 
-    LabeledPostings(const std::string& name, const std::string& value)
-        : label(name, value)
+    LabeledPostings(const std::string& name, const std::string& value,
+                    uint64_t min_timestamp)
+        : label(name, value), min_timestamp(min_timestamp)
     {}
 };
 

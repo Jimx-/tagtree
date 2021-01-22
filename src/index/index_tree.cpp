@@ -37,7 +37,7 @@ IndexTree::IndexTree(IndexServer* server, std::string_view filename,
 IndexTree::~IndexTree() {}
 
 void IndexTree::query_postings(
-    const promql::LabelMatcher& matcher,
+    const promql::LabelMatcher& matcher, uint64_t start, uint64_t end,
     std::map<unsigned int, std::unique_ptr<uint8_t[]>>& bitmaps,
     const std::set<unsigned int>& seg_mask)
 {
@@ -47,14 +47,14 @@ void IndexTree::query_postings(
     auto name = matcher.name;
     auto value = matcher.value;
 
-    match_key = make_key(name, value, 0);
+    match_key = make_key(name, value, 0, 0);
 
     switch (op) {
     case MatchOp::EQL:
         /* key range: from   | hash(name) | hash(value)     | *
          *              to   | hash(name) | hash(value) + 1 | */
-        start_key = make_key(name, value, 0);
-        end_key = make_key(name, value, (1 << (SEGSEL_BYTES * 8)) - 1);
+        start_key = make_key(name, value, 0, 0);
+        end_key = make_key(name, value, end, (1 << (SEGSEL_BYTES * 8)) - 1);
         break;
     case MatchOp::NEQ:
         /* key range: from   | hash(name)     | 0 | *
@@ -76,7 +76,7 @@ void IndexTree::query_postings(
         /* key range: from   | hash(name)     | 0 | *
          *              to   | hash(name) + 1 | 0 | */
         {
-            start_key = make_key(name, value, 0);
+            start_key = make_key(name, value, 0, 0);
 
             start_key.get_tag_name(name_buf);
             incr_buf(name_buf, NAME_BYTES);
@@ -150,6 +150,11 @@ void IndexTree::query_postings(
             break;
         }
 
+        if (it->first.get_timestamp() >= end) {
+            it++;
+            continue;
+        }
+
         unsigned int segsel = it->first.get_segnum();
 
         if (!seg_mask.empty() && seg_mask.find(segsel) == seg_mask.end()) {
@@ -190,7 +195,8 @@ out:
 }
 
 void IndexTree::resolve_label_matchers(
-    const std::vector<promql::LabelMatcher>& matchers, Roaring& postings)
+    const std::vector<promql::LabelMatcher>& matchers, uint64_t start,
+    uint64_t end, Roaring& postings)
 {
     bool first = true;
     std::map<unsigned int, std::unique_ptr<uint8_t[]>> bitmaps;
@@ -205,7 +211,7 @@ void IndexTree::resolve_label_matchers(
         }
 
         std::map<unsigned int, std::unique_ptr<uint8_t[]>> tag_bitmaps;
-        query_postings(p, tag_bitmaps, seg_mask);
+        query_postings(p, start, end, tag_bitmaps, seg_mask);
 
         if (tag_bitmaps.empty()) {
             return;
@@ -266,7 +272,7 @@ void IndexTree::label_values(const std::string& label_name,
     KeyType start_key, end_key;
     uint8_t name_buf[NAME_BYTES];
 
-    start_key = make_key(label_name, "", 0);
+    start_key = make_key(label_name, "", 0, 0);
 
     start_key.get_tag_name(name_buf);
     incr_buf(name_buf, NAME_BYTES);
@@ -317,6 +323,7 @@ void IndexTree::write_postings(
         auto& name = entry.label.name;
         auto& value = entry.label.value;
         auto& bitmap = entry.postings;
+        auto min_timestamp = entry.min_timestamp;
 
         if (bitmap.isEmpty()) continue;
 
@@ -336,10 +343,10 @@ void IndexTree::write_postings(
             auto cur_segsel = tsid_segsel(*it);
 
             if (cur_segsel != left_segsel) {
-                pid = write_posting_page(name, value, left_segsel, left_it, it,
-                                         updated);
+                pid = write_posting_page(name, value, min_timestamp,
+                                         left_segsel, left_it, it, updated);
 
-                posting_key = make_key(name, value, left_segsel);
+                posting_key = make_key(name, value, min_timestamp, left_segsel);
                 tree_entries.emplace_back(posting_key, pid, updated);
 
                 left_segsel = cur_segsel;
@@ -348,10 +355,10 @@ void IndexTree::write_postings(
         }
 
         if (left_it != end_it) {
-            pid = write_posting_page(name, value, left_segsel, left_it, end_it,
-                                     updated);
+            pid = write_posting_page(name, value, min_timestamp, left_segsel,
+                                     left_it, end_it, updated);
 
-            posting_key = make_key(name, value, left_segsel);
+            posting_key = make_key(name, value, min_timestamp, left_segsel);
             tree_entries.emplace_back(posting_key, pid, updated);
         }
     }
@@ -371,15 +378,15 @@ void IndexTree::write_postings(
 }
 
 bptree::PageID IndexTree::write_posting_page(
-    const std::string& name, const std::string& value, unsigned int segsel,
-    const RoaringSetBitForwardIterator& first,
+    const std::string& name, const std::string& value, uint64_t start_time,
+    unsigned int segsel, const RoaringSetBitForwardIterator& first,
     const RoaringSetBitForwardIterator& last, bool& updated)
 {
     /* lookup the first page for the label */
     bptree::Page* posting_page = nullptr;
     boost::upgrade_lock<bptree::Page> posting_page_lock;
 
-    auto posting_key = make_key(name, value, segsel);
+    auto posting_key = make_key(name, value, start_time, segsel);
     std::vector<bptree::PageID> posting_page_ids;
     cow_tree.get_value(posting_key, posting_page_ids);
 
@@ -485,7 +492,7 @@ IndexTree::create_posting_page(const promql::Label& label,
 
 IndexTree::KeyType IndexTree::make_key(const std::string& name,
                                        const std::string& value,
-                                       unsigned int segsel)
+                                       uint64_t start_time, unsigned int segsel)
 {
     KeyType key;
     uint8_t name_buf[NAME_BYTES];
@@ -499,7 +506,7 @@ IndexTree::KeyType IndexTree::make_key(const std::string& name,
 
     key.set_tag_name(name_buf);
     key.set_tag_value(value_buf);
-    key.set_timestamp(0);
+    key.set_timestamp(start_time);
     key.set_segnum(segsel);
 
     return key;

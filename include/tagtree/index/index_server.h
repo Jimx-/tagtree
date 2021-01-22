@@ -24,7 +24,7 @@ public:
 
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
-                           MemPostingList& tsids);
+                           uint64_t start, uint64_t end, MemPostingList& tsids);
 
     void exists(const std::vector<promql::Label>& labels,
                 MemPostingList& tsids);
@@ -54,7 +54,7 @@ private:
     inline TSID get_tsid() { return id_counter.fetch_add(1); }
 
     inline bool compactable(TSID current_id);
-    bool try_compact(bool detach);
+    bool try_compact(bool force, bool detach);
     void compact(TSID current_id);
 
     void replay_wal();

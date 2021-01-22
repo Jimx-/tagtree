@@ -18,6 +18,7 @@ public:
 
 private:
     IndexedStorage* parent;
+    uint64_t min_t, max_t;
     std::shared_ptr<tagtree::Querier> querier;
 };
 

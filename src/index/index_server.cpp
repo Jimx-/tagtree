@@ -62,7 +62,7 @@ void IndexServer::exists(const std::vector<promql::Label>& labels,
         return;
     }
 
-    index_tree.resolve_label_matchers(matchers, tsids);
+    index_tree.resolve_label_matchers(matchers, 0, UINT64_MAX, tsids);
 
     if (tsids.cardinality() == 1) {
         /* if found also add it to the cache to speed up the next lookup */
@@ -71,12 +71,13 @@ void IndexServer::exists(const std::vector<promql::Label>& labels,
 }
 
 void IndexServer::resolve_label_matchers(
-    const std::vector<promql::LabelMatcher>& matcher, MemPostingList& tsids)
+    const std::vector<promql::LabelMatcher>& matcher, uint64_t start,
+    uint64_t end, MemPostingList& tsids)
 {
     MemPostingList tree_postings, mem_postings;
 
     mem_index.resolve_label_matchers(matcher, mem_postings);
-    index_tree.resolve_label_matchers(matcher, tree_postings);
+    index_tree.resolve_label_matchers(matcher, start, end, tree_postings);
 
     tsids = tree_postings | mem_postings;
 }
@@ -108,17 +109,17 @@ void IndexServer::commit(const std::vector<SeriesRef>& series)
 
     wal.log_record(&buf[0], buf.size(), true);
 
-    try_compact(true);
+    try_compact(false, true);
 }
 
-bool IndexServer::try_compact(bool detach)
+bool IndexServer::try_compact(bool force, bool detach)
 {
-    if (compactable(id_counter.load()) &&
+    if ((compactable(id_counter.load()) || force) &&
         !compacting.load(std::memory_order_acquire)) {
         std::lock_guard<std::mutex> lock(compaction_mutex);
 
         TSID current_id = id_counter.load(std::memory_order_relaxed);
-        if (compactable(current_id) &&
+        if ((compactable(current_id) || force) &&
             !compacting.load(std::memory_order_relaxed)) {
             compacting.store(true, std::memory_order_relaxed);
             last_compaction_wm = current_id;
@@ -138,7 +139,7 @@ bool IndexServer::try_compact(bool detach)
     return false;
 }
 
-void IndexServer::manual_compact() { try_compact(false); }
+void IndexServer::manual_compact() { try_compact(true, false); }
 
 bool IndexServer::compactable(TSID current_id)
 {

@@ -5,7 +5,7 @@ namespace tagtree {
 namespace prom {
 
 PromQuerier::PromQuerier(IndexedStorage* parent, uint64_t mint, uint64_t maxt)
-    : parent(parent)
+    : parent(parent), min_t(mint), max_t(maxt)
 {
     querier = parent->get_storage()->querier(mint, maxt);
 }
@@ -14,7 +14,7 @@ std::shared_ptr<promql::SeriesSet>
 PromQuerier::select(const std::vector<promql::LabelMatcher>& matchers)
 {
     MemPostingList tsids;
-    parent->get_index()->resolve_label_matchers(matchers, tsids);
+    parent->get_index()->resolve_label_matchers(matchers, min_t, max_t, tsids);
 
     auto ss = querier->select(tsids);
     return std::make_shared<PromSeriesSet>(parent, ss);
