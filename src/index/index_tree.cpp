@@ -30,8 +30,7 @@ IndexTree::IndexTree(IndexServer* server, std::string_view filename,
                           filename, true, cache_size)),
       cow_tree(page_cache.get())
 {
-    postings_per_page =
-        (page_cache->get_page_size() - 2 * sizeof(SymbolTable::Ref)) << 3;
+    postings_per_page = (page_cache->get_page_size() - BITMAP_PAGE_OFFSET) << 3;
 }
 
 IndexTree::~IndexTree() {}
@@ -168,7 +167,14 @@ void IndexTree::query_postings(
         const uint8_t* p = page->get_buffer(lock);
 
         promql::Label label;
-        read_page_metadata(p, label);
+        uint64_t end_timestamp;
+        read_page_metadata(p, label, end_timestamp);
+
+        if (end_timestamp < start) {
+            page_cache->unpin_page(page, false, lock);
+            it++;
+            continue;
+        }
 
         if (!matcher.match(label)) {
             page_cache->unpin_page(page, false, lock);
@@ -247,7 +253,7 @@ void IndexTree::resolve_label_matchers(
         auto segsel = bm.first;
         uint8_t* buf = bm.second.get();
         uint8_t* lim = buf + page_cache->get_page_size();
-        uint64_t* pbm = (uint64_t*)(buf + 2 * sizeof(SymbolTable::Ref));
+        uint64_t* pbm = (uint64_t*)(buf + BITMAP_PAGE_OFFSET);
         size_t start_index = 0;
         size_t seg_offset = segsel * postings_per_page;
 
@@ -293,7 +299,8 @@ void IndexTree::label_values(const std::string& label_name,
         const uint8_t* p = page->get_buffer(lock);
 
         promql::Label label;
-        read_page_metadata(p, label);
+        uint64_t end_timestamp;
+        read_page_metadata(p, label, end_timestamp);
 
         if (label.name == label_name) {
             values.insert(label.value);
@@ -324,6 +331,7 @@ void IndexTree::write_postings(
         auto& value = entry.label.value;
         auto& bitmap = entry.postings;
         auto min_timestamp = entry.min_timestamp;
+        auto max_timestamp = entry.max_timestamp;
 
         if (bitmap.isEmpty()) continue;
 
@@ -344,7 +352,8 @@ void IndexTree::write_postings(
 
             if (cur_segsel != left_segsel) {
                 pid = write_posting_page(name, value, min_timestamp,
-                                         left_segsel, left_it, it, updated);
+                                         max_timestamp, left_segsel, left_it,
+                                         it, updated);
 
                 posting_key = make_key(name, value, min_timestamp, left_segsel);
                 tree_entries.emplace_back(posting_key, pid, updated);
@@ -355,8 +364,8 @@ void IndexTree::write_postings(
         }
 
         if (left_it != end_it) {
-            pid = write_posting_page(name, value, min_timestamp, left_segsel,
-                                     left_it, end_it, updated);
+            pid = write_posting_page(name, value, min_timestamp, max_timestamp,
+                                     left_segsel, left_it, end_it, updated);
 
             posting_key = make_key(name, value, min_timestamp, left_segsel);
             tree_entries.emplace_back(posting_key, pid, updated);
@@ -379,7 +388,8 @@ void IndexTree::write_postings(
 
 bptree::PageID IndexTree::write_posting_page(
     const std::string& name, const std::string& value, uint64_t start_time,
-    unsigned int segsel, const RoaringSetBitForwardIterator& first,
+    uint64_t end_time, unsigned int segsel,
+    const RoaringSetBitForwardIterator& first,
     const RoaringSetBitForwardIterator& last, bool& updated)
 {
     /* lookup the first page for the label */
@@ -392,7 +402,8 @@ bptree::PageID IndexTree::write_posting_page(
 
     updated = false;
     if (posting_page_ids.empty()) {
-        posting_page = create_posting_page({name, value}, posting_page_lock);
+        posting_page =
+            create_posting_page({name, value}, end_time, posting_page_lock);
     }
 
     if (!posting_page) {
@@ -403,8 +414,9 @@ bptree::PageID IndexTree::write_posting_page(
 
             const uint8_t* buf = page->get_buffer(plock);
             promql::Label page_label;
+            uint64_t page_end_timestamp;
 
-            read_page_metadata(buf, page_label);
+            read_page_metadata(buf, page_label, page_end_timestamp);
 
             if (page_label.name != name || page_label.value != value) {
                 page_cache->unpin_page(page, false, plock);
@@ -418,6 +430,8 @@ bptree::PageID IndexTree::write_posting_page(
             uint8_t* new_buf = posting_page->get_buffer(ulock);
             ::memcpy(new_buf, buf, page->get_size());
 
+            write_page_metadata(new_buf, {name, value}, end_time);
+
             page_cache->unpin_page(page, false, plock);
             updated = true;
             break;
@@ -425,14 +439,15 @@ bptree::PageID IndexTree::write_posting_page(
     }
 
     if (!posting_page) {
-        posting_page = create_posting_page({name, value}, posting_page_lock);
+        posting_page =
+            create_posting_page({name, value}, end_time, posting_page_lock);
     }
 
     {
         boost::upgrade_to_unique_lock<bptree::Page> ulock(posting_page_lock);
         uint8_t* posting_buf = posting_page->get_buffer(ulock);
-        uint64_t* bitmap = reinterpret_cast<uint64_t*>(
-            posting_buf + 2 * sizeof(SymbolTable::Ref));
+        uint64_t* bitmap =
+            reinterpret_cast<uint64_t*>(posting_buf + BITMAP_PAGE_OFFSET);
 
         for (auto it = first; it != last; it++) {
             size_t bitnum = *it % postings_per_page;
@@ -445,7 +460,8 @@ bptree::PageID IndexTree::write_posting_page(
     return posting_page->get_id();
 }
 
-size_t IndexTree::read_page_metadata(const uint8_t* buf, promql::Label& label)
+size_t IndexTree::read_page_metadata(const uint8_t* buf, promql::Label& label,
+                                     uint64_t& end_timestamp)
 {
     const uint8_t* start = buf;
     auto* sm = server->get_series_manager();
@@ -454,6 +470,8 @@ size_t IndexTree::read_page_metadata(const uint8_t* buf, promql::Label& label)
     buf += sizeof(uint32_t);
     uint32_t value_ref = *(uint32_t*)buf;
     buf += sizeof(uint32_t);
+    end_timestamp = *(uint64_t*)buf;
+    buf += sizeof(uint64_t);
 
     label.name = sm->get_symbol(name_ref);
     label.value = sm->get_symbol(value_ref);
@@ -461,7 +479,8 @@ size_t IndexTree::read_page_metadata(const uint8_t* buf, promql::Label& label)
     return buf - start;
 }
 
-size_t IndexTree::write_page_metadata(uint8_t* buf, const promql::Label& label)
+size_t IndexTree::write_page_metadata(uint8_t* buf, const promql::Label& label,
+                                      uint64_t end_timestamp)
 {
     uint8_t* start = buf;
     auto* sm = server->get_series_manager();
@@ -472,12 +491,15 @@ size_t IndexTree::write_page_metadata(uint8_t* buf, const promql::Label& label)
     buf += sizeof(uint32_t);
     *(uint32_t*)buf = (uint32_t)value_ref;
     buf += sizeof(uint32_t);
+    *(uint64_t*)buf = end_timestamp;
+    buf += sizeof(uint64_t);
 
     return buf - start;
 }
 
 bptree::Page*
 IndexTree::create_posting_page(const promql::Label& label,
+                               uint64_t end_timestamp,
                                boost::upgrade_lock<bptree::Page>& lock)
 {
     auto page = page_cache->new_page(lock);
@@ -485,7 +507,8 @@ IndexTree::create_posting_page(const promql::Label& label,
     uint8_t* buf = page->get_buffer(ulock);
 
     memset(buf, 0, page->get_size());
-    write_page_metadata(buf, label);
+    size_t offset = write_page_metadata(buf, label, end_timestamp);
+    assert(offset == BITMAP_PAGE_OFFSET);
 
     return page;
 }

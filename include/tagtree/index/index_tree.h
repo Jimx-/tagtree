@@ -50,6 +50,9 @@ private:
     static const size_t VALUE_BYTES = 8;
     static const size_t SEGSEL_BYTES = 2;
 
+    static const size_t BITMAP_PAGE_OFFSET =
+        2 * sizeof(SymbolTable::Ref) + sizeof(uint64_t);
+
     using KeyType = TupleKey<NAME_BYTES, VALUE_BYTES>;
     using COWTreeType = tagtree::COWTree<100, KeyType, bptree::PageID>;
 
@@ -63,17 +66,21 @@ private:
         return tsid / postings_per_page;
     }
 
-    size_t read_page_metadata(const uint8_t* buf, promql::Label& label);
-    size_t write_page_metadata(uint8_t* buf, const promql::Label& label);
+    size_t read_page_metadata(const uint8_t* buf, promql::Label& label,
+                              uint64_t& end_timestamp);
+    size_t write_page_metadata(uint8_t* buf, const promql::Label& label,
+                               uint64_t end_timestamp);
 
     /* Create a posting page and fill in the metadata.
      * The new page is locked when returned */
     bptree::Page* create_posting_page(const promql::Label& label,
+                                      uint64_t end_timestamp,
                                       boost::upgrade_lock<bptree::Page>& lock);
 
     bptree::PageID
     write_posting_page(const std::string& name, const std::string& value,
-                       uint64_t start_timestamp, unsigned int segsel,
+                       uint64_t start_timestamp, uint64_t end_timestamp,
+                       unsigned int segsel,
                        const RoaringSetBitForwardIterator& first,
                        const RoaringSetBitForwardIterator& last, bool& updated);
 

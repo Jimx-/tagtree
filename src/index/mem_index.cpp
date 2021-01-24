@@ -178,7 +178,8 @@ void MemIndex::snapshot(TSID limit,
             if (bitmap.minimum() > limit) continue;
 
             labeled_postings.emplace_back(name.first, value.first,
-                                          value.second.min_timestamp);
+                                          value.second.min_timestamp,
+                                          value.second.max_timestamp);
             auto& new_bitmap = labeled_postings.back().postings;
             new_bitmap = bitmap;
             new_bitmap.runOptimize();
