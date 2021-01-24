@@ -23,16 +23,22 @@ IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
     replay_wal();
 }
 
-IndexServer::~IndexServer() { std::cout << id_counter.load() << std::endl; }
-
 TSID IndexServer::add_series(uint64_t t,
                              const std::vector<promql::Label>& labels)
 {
     TSID new_id;
+    bool ok;
 
     do {
         new_id = get_tsid();
-    } while (!mem_index.add(labels, new_id, t));
+        auto inserted_id = new_id;
+
+        ok = mem_index.add(labels, inserted_id, t);
+
+        if (inserted_id != new_id) {
+            return inserted_id;
+        }
+    } while (!ok);
 
     series_manager->add(new_id, labels);
 
@@ -71,15 +77,45 @@ void IndexServer::exists(const std::vector<promql::Label>& labels,
 }
 
 void IndexServer::resolve_label_matchers(
-    const std::vector<promql::LabelMatcher>& matcher, uint64_t start,
+    const std::vector<promql::LabelMatcher>& matchers, uint64_t start,
     uint64_t end, MemPostingList& tsids)
 {
+    std::vector<promql::Label> labels;
     MemPostingList tree_postings, mem_postings;
 
-    mem_index.resolve_label_matchers(matcher, mem_postings);
-    index_tree.resolve_label_matchers(matcher, start, end, tree_postings);
+    bool equal_pred = true;
+    for (auto&& matcher : matchers) {
+        if (matcher.op != promql::MatchOp::EQL) {
+            equal_pred = false;
+            break;
+        }
+
+        labels.push_back({matcher.name, matcher.value});
+    }
+
+    if (equal_pred) {
+        auto entry = series_manager->get_by_label_set(labels);
+
+        if (entry) {
+            tsids = MemPostingList();
+            tsids.add(entry->tsid);
+            entry->unlock();
+            return;
+        }
+    }
+
+    mem_index.resolve_label_matchers(matchers, mem_postings);
+    index_tree.resolve_label_matchers(matchers, start, end, tree_postings);
 
     tsids = tree_postings | mem_postings;
+
+    if (tsids.cardinality() == 1) {
+        // touch the series entry to load it into cache
+        auto entry = series_manager->get(*tsids.begin());
+        if (entry) {
+            entry->unlock();
+        }
+    }
 }
 
 bool IndexServer::get_labels(TSID tsid, std::vector<promql::Label>& labels)
@@ -215,7 +251,6 @@ void IndexServer::replay_wal()
     last_compaction_wm = high_watermark;
     mem_index.set_low_watermark(high_watermark);
     id_counter.store(high_watermark);
-    std::cout << high_watermark << std::endl;
 }
 
 } // namespace tagtree

@@ -16,28 +16,8 @@ namespace tagtree {
 SeriesFileManager::SeriesFileManager(size_t cache_size,
                                      std::string_view series_dir,
                                      size_t segment_size)
-    : AbstractSeriesManager(cache_size), series_dir(series_dir),
-      segment_size(segment_size)
-{
-    init_series_dir();
-}
-
-void SeriesFileManager::init_series_dir()
-{
-    struct stat sbuf;
-    int ret = ::stat(series_dir.c_str(), &sbuf);
-
-    if (ret == -1 && errno == ENOENT) {
-        ret =
-            ::mkdir(series_dir.c_str(), S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP |
-                                            S_IXGRP | S_IROTH | S_IXOTH);
-
-        if (ret == -1) {
-            throw std::runtime_error("failed to create WAL directory " +
-                                     series_dir);
-        }
-    }
-}
+    : AbstractSeriesManager(cache_size, series_dir), segment_size(segment_size)
+{}
 
 std::string SeriesFileManager::get_series_filename(size_t seg)
 {

@@ -202,7 +202,7 @@ public:
         txn.new_root = nullptr;
         txn.old_version = 0;
 
-        return latest_version.fetch_add(1, std::memory_order_release) + 1;
+        return latest_version.fetch_add(1) + 1;
     }
 
     std::shared_ptr<BaseNodeType> read_node(BaseNodeType* parent,

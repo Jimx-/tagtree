@@ -28,7 +28,10 @@ bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid,
         MemPostingList tsids;
         resolve_label_matchers_unsafe(matchers, tsids);
 
-        if (!tsids.isEmpty()) return true;
+        if (!tsids.isEmpty()) {
+            tsid = *tsids.begin();
+            return true;
+        }
 
         for (auto&& p : labels) {
             add_label(p, tsid, timestamp);

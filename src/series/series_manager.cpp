@@ -2,6 +2,10 @@
 
 #include "xxhash.h"
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 namespace tagtree {
 
 static uint64_t get_label_set_hash(const std::vector<promql::Label>& lset)
@@ -19,9 +23,28 @@ static uint64_t get_label_set_hash(const std::vector<promql::Label>& lset)
     return XXH64(buffer.c_str(), buffer.length(), 0);
 }
 
-AbstractSeriesManager::AbstractSeriesManager(size_t cache_size)
-    : max_entries(cache_size), symtab("symbol.tab")
+AbstractSeriesManager::AbstractSeriesManager(size_t cache_size,
+                                             std::string_view series_dir)
+    : max_entries(cache_size), series_dir(series_dir),
+      symtab((init_series_dir(), this->series_dir + "/symbol.tab"))
 {}
+
+void AbstractSeriesManager::init_series_dir()
+{
+    struct stat sbuf;
+    int ret = ::stat(series_dir.c_str(), &sbuf);
+
+    if (ret == -1 && errno == ENOENT) {
+        ret =
+            ::mkdir(series_dir.c_str(), S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP |
+                                            S_IXGRP | S_IROTH | S_IXOTH);
+
+        if (ret == -1) {
+            throw std::runtime_error("failed to create WAL directory " +
+                                     series_dir);
+        }
+    }
+}
 
 void AbstractSeriesManager::add(TSID tsid,
                                 const std::vector<promql::Label>& labels,
@@ -102,7 +125,7 @@ AbstractSeriesManager::get_by_label_set(const std::vector<promql::Label>& lset)
 
     auto it1 = lset.begin();
     auto it2 = entry->labels.begin();
-    for (; it1 != lset.begin(); it++, it2++) {
+    for (; it1 != lset.end(); it1++, it2++) {
         if (it1->name != it2->name || it1->value != it2->value) {
             return nullptr;
         }

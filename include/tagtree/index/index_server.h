@@ -18,12 +18,10 @@ public:
     IndexServer(std::string_view index_dir, size_t cache_size,
                 AbstractSeriesManager* sm);
 
-    ~IndexServer();
-
     AbstractSeriesManager* get_series_manager() const { return series_manager; }
 
     void
-    resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
+    resolve_label_matchers(const std::vector<promql::LabelMatcher>& matchers,
                            uint64_t start, uint64_t end, MemPostingList& tsids);
 
     void exists(const std::vector<promql::Label>& labels,
@@ -39,6 +37,8 @@ public:
     void commit(const std::vector<SeriesRef>& series);
 
     void manual_compact();
+
+    TSID current_tsid() const { return id_counter.load(); }
 
 private:
     MemIndex mem_index;
