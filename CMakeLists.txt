@@ -40,6 +40,7 @@ set(SOURCE_FILES
     ${TOPDIR}/src/series/series_manager.cpp
     ${TOPDIR}/src/series/symbol_table.cpp
     ${TOPDIR}/src/tree/item_page_view.cpp
+    ${TOPDIR}/src/tree/sorted_list_page_view.cpp
     ${TOPDIR}/src/wal/record_serializer.cpp
     ${TOPDIR}/src/wal/reader.cpp
     ${TOPDIR}/src/wal/wal.cpp

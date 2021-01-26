@@ -47,7 +47,7 @@ unsigned int ItemPageView::put_item(uint8_t* item, size_t length,
 
     assert(lower >= P_POINTERS);
     assert(lower <= upper);
-    assert(upper <= length);
+    assert(upper <= size);
 
     upper -= length;
     auto lp = LinePointer{upper, (uint16_t)length};

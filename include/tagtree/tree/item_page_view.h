@@ -13,12 +13,21 @@ public:
 
     void init_page();
 
+    inline size_t get_item_count() const { return num_line_pointers(); }
+
     std::tuple<const uint8_t*, size_t> get_item(unsigned int offset) const;
 
     static const unsigned int NO_TARGET = 0;
     unsigned int put_item(uint8_t* item, size_t length, unsigned int target,
                           bool overwrite);
     bool set_item(unsigned int offset, uint8_t* item, size_t length);
+
+protected:
+    inline size_t get_free_space() const
+    {
+        size_t size = get_upper() - get_lower();
+        return size < LINE_POINTER_SIZE ? 0 : size;
+    }
 
 private:
     static const int P_LOWER = 0;
@@ -47,12 +56,6 @@ private:
     {
         *(uint16_t*)&buf[P_UPPER] = upper;
     };
-
-    inline size_t get_free_space() const
-    {
-        size_t size = get_upper() - get_lower();
-        return size < LINE_POINTER_SIZE ? 0 : size;
-    }
 
     inline size_t num_line_pointers() const
     {
