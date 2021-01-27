@@ -80,17 +80,35 @@ public:
 
     bool operator<(const TupleKey<NB, VB>& rhs) const
     {
-        if (memcmp(buf, rhs.buf, NB) < 0) return true;
-        if (memcmp(&buf[NB], &rhs.buf[NB], VB) < 0) return true;
+        auto name_cmp = memcmp(buf, rhs.buf, NB);
+        auto value_cmp = memcmp(&buf[NB], &rhs.buf[NB], VB);
+
+        if (name_cmp < 0) return true;
+        if (name_cmp > 0) return false;
+
+        if (value_cmp < 0) return true;
+        if (value_cmp > 0) return false;
+
         if (get_timestamp() < rhs.get_timestamp()) return true;
+        if (get_timestamp() > rhs.get_timestamp()) return false;
+
         return get_segnum() < rhs.get_segnum();
     }
 
     bool operator>(const TupleKey<NB, VB>& rhs) const
     {
-        if (memcmp(buf, rhs.buf, NB) > 0) return true;
-        if (memcmp(&buf[NB], &rhs.buf[NB], VB) > 0) return true;
+        auto name_cmp = memcmp(buf, rhs.buf, NB);
+        auto value_cmp = memcmp(&buf[NB], &rhs.buf[NB], VB);
+
+        if (name_cmp > 0) return true;
+        if (name_cmp < 0) return false;
+
+        if (value_cmp > 0) return true;
+        if (value_cmp < 0) return false;
+
         if (get_timestamp() > rhs.get_timestamp()) return true;
+        if (get_timestamp() < rhs.get_timestamp()) return false;
+
         return get_segnum() > rhs.get_segnum();
     }
 

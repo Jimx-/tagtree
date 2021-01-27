@@ -167,12 +167,15 @@ void MemIndex::label_values(const std::string& label_name,
     }
 }
 
-void MemIndex::snapshot(TSID limit,
-                        std::vector<LabeledPostings>& labeled_postings)
+void MemIndex::snapshot(TSID limit, MemIndexSnapshot& snapshot)
 {
     std::unique_lock<std::shared_mutex> lock(mutex);
 
+    snapshot.clear();
+
     for (auto&& name : map) {
+        std::vector<LabeledPostings> entries;
+
         for (auto&& value : name.second) {
             auto& bitmap = value.second.bitmap;
 
@@ -180,13 +183,14 @@ void MemIndex::snapshot(TSID limit,
 
             if (bitmap.minimum() > limit) continue;
 
-            labeled_postings.emplace_back(name.first, value.first,
-                                          value.second.min_timestamp,
-                                          value.second.max_timestamp);
-            auto& new_bitmap = labeled_postings.back().postings;
+            entries.emplace_back(value.first, value.second.min_timestamp,
+                                 value.second.max_timestamp);
+            auto& new_bitmap = entries.back().postings;
             new_bitmap = bitmap;
             new_bitmap.runOptimize();
         }
+
+        snapshot[name.first] = entries;
     }
 }
 

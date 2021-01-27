@@ -17,16 +17,19 @@ namespace tagtree {
 using MemPostingList = Roaring;
 
 struct LabeledPostings {
-    promql::Label label;
+    std::string value;
     Roaring postings;
     uint64_t min_timestamp, max_timestamp;
 
-    LabeledPostings(const std::string& name, const std::string& value,
-                    uint64_t min_timestamp, uint64_t max_timestamp)
-        : label(name, value), min_timestamp(min_timestamp),
+    LabeledPostings(const std::string& value, uint64_t min_timestamp,
+                    uint64_t max_timestamp)
+        : value(value), min_timestamp(min_timestamp),
           max_timestamp(max_timestamp)
     {}
 };
+
+using MemIndexSnapshot =
+    std::unordered_map<std::string, std::vector<LabeledPostings>>;
 
 class MemIndex {
 public:
@@ -43,7 +46,7 @@ public:
                       std::unordered_set<std::string>& values);
 
     void set_low_watermark(TSID wm);
-    void snapshot(TSID limit, std::vector<LabeledPostings>& labeled_postings);
+    void snapshot(TSID limit, MemIndexSnapshot& snapshot);
 
     void gc();
 

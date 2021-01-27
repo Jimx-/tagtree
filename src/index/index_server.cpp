@@ -184,7 +184,7 @@ bool IndexServer::compactable(TSID current_id)
 
 void IndexServer::compact(TSID current_id)
 {
-    std::vector<LabeledPostings> snapshot;
+    MemIndexSnapshot snapshot;
 
     wal.close_segment();
 

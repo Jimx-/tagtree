@@ -35,8 +35,7 @@ public:
               size_t cache_size);
     ~IndexTree();
 
-    void write_postings(TSID limit,
-                        const std::vector<LabeledPostings>& labeled_postings);
+    void write_postings(TSID limit, MemIndexSnapshot& snapshot);
 
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matcher,
@@ -55,6 +54,16 @@ private:
 
     using KeyType = TupleKey<NAME_BYTES, VALUE_BYTES>;
     using COWTreeType = tagtree::COWTree<100, KeyType, bptree::PageID>;
+
+    struct TreeEntry {
+        IndexTree::KeyType key;
+        bptree::PageID pid;
+        bool updated;
+
+        TreeEntry(IndexTree::KeyType key, bptree::PageID pid, bool updated)
+            : key(key), pid(pid), updated(updated)
+        {}
+    };
 
     IndexServer* server;
     std::unique_ptr<bptree::AbstractPageCache> page_cache;
@@ -76,6 +85,14 @@ private:
     bptree::Page* create_posting_page(const promql::Label& label,
                                       uint64_t end_timestamp,
                                       boost::upgrade_lock<bptree::Page>& lock);
+
+    void write_postings_bitmap(TSID limit, const std::string& name,
+                               const std::string& value, const Roaring& bitmap,
+                               uint64_t min_timestamp, uint64_t max_timestamp,
+                               std::vector<TreeEntry>& tree_entries);
+    void write_postings_sorted_list(TSID limit, const std::string& name,
+                                    const std::vector<LabeledPostings>& entries,
+                                    std::vector<TreeEntry>& tree_entries);
 
     bptree::PageID
     write_posting_page(const std::string& name, const std::string& value,

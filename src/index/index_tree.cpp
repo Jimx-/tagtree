@@ -4,6 +4,7 @@
 #include "tagtree/index/bitmap.h"
 #include "tagtree/index/index_server.h"
 #include "tagtree/series/series_manager.h"
+#include "tagtree/tree/sorted_list_page_view.h"
 
 #include <cassert>
 
@@ -311,32 +312,75 @@ void IndexTree::label_values(const std::string& label_name,
     }
 }
 
-void IndexTree::write_postings(
-    TSID limit, const std::vector<LabeledPostings>& labeled_postings)
+void IndexTree::write_postings_bitmap(TSID limit, const std::string& name,
+                                      const std::string& value,
+                                      const Roaring& bitmap,
+                                      uint64_t min_timestamp,
+                                      uint64_t max_timestamp,
+                                      std::vector<TreeEntry>& tree_entries)
 {
-    struct TreeEntry {
-        KeyType key;
-        bptree::PageID pid;
-        bool updated;
+    if (bitmap.isEmpty()) return;
 
-        TreeEntry(KeyType key, bptree::PageID pid, bool updated)
-            : key(key), pid(pid), updated(updated)
-        {}
-    };
-    std::vector<TreeEntry> tree_entries;
-    std::unordered_set<KeyType> keys;
+    auto left_it = bitmap.begin();
+    auto left_segsel = tsid_segsel(*left_it);
 
-    for (auto&& entry : labeled_postings) {
-        auto& name = entry.label.name;
-        auto& value = entry.label.value;
+    auto it = left_it;
+    ++it;
+    auto end_it = bitmap.begin();
+    end_it.equalorlarger(limit);
+    if (end_it != bitmap.end()) end_it++;
+
+    bool updated;
+    bptree::PageID pid;
+    KeyType posting_key;
+    for (; it != end_it; it++) {
+        auto cur_segsel = tsid_segsel(*it);
+
+        if (cur_segsel != left_segsel) {
+            pid = write_posting_page(name, value, min_timestamp, max_timestamp,
+                                     left_segsel, left_it, it, updated);
+
+            posting_key = make_key(name, value, min_timestamp, left_segsel);
+            tree_entries.emplace_back(posting_key, pid, updated);
+
+            left_segsel = cur_segsel;
+            left_it = it;
+        }
+    }
+
+    if (left_it != end_it) {
+        pid = write_posting_page(name, value, min_timestamp, max_timestamp,
+                                 left_segsel, left_it, end_it, updated);
+
+        posting_key = make_key(name, value, min_timestamp, left_segsel);
+        tree_entries.emplace_back(posting_key, pid, updated);
+    }
+}
+
+void IndexTree::write_postings_sorted_list(
+    TSID limit, const std::string& name,
+    const std::vector<LabeledPostings>& entries,
+    std::vector<TreeEntry>& tree_entries)
+{
+    if (entries.empty()) return;
+
+    bptree::Page* posting_page = nullptr;
+    boost::upgrade_lock<bptree::Page> posting_page_lock;
+    uint64_t min_timestamp, max_timestamp;
+    unsigned int segsel = 0;
+    int need_init = true;
+
+    min_timestamp = entries.begin()->min_timestamp;
+    max_timestamp = entries.begin()->max_timestamp;
+
+    posting_page =
+        create_posting_page({name, ""}, max_timestamp, posting_page_lock);
+
+    for (auto&& entry : entries) {
+        auto& value = entry.value;
         auto& bitmap = entry.postings;
-        auto min_timestamp = entry.min_timestamp;
-        auto max_timestamp = entry.max_timestamp;
-
-        if (bitmap.isEmpty()) continue;
 
         auto left_it = bitmap.begin();
-        auto left_segsel = tsid_segsel(*left_it);
 
         auto it = left_it;
         ++it;
@@ -344,31 +388,100 @@ void IndexTree::write_postings(
         end_it.equalorlarger(limit);
         if (end_it != bitmap.end()) end_it++;
 
-        bool updated;
-        bptree::PageID pid;
-        KeyType posting_key;
+        max_timestamp = std::max(max_timestamp, entry.max_timestamp);
+
         for (; it != end_it; it++) {
-            auto cur_segsel = tsid_segsel(*it);
+            {
+                boost::upgrade_to_unique_lock<bptree::Page> ulock(
+                    posting_page_lock);
+                uint8_t* page_buf = posting_page->get_buffer(ulock);
+                uint8_t* buf =
+                    reinterpret_cast<uint8_t*>(page_buf + BITMAP_PAGE_OFFSET);
 
-            if (cur_segsel != left_segsel) {
-                pid = write_posting_page(name, value, min_timestamp,
-                                         max_timestamp, left_segsel, left_it,
-                                         it, updated);
+                SortedListPageView page_view(buf, page_cache->get_page_size() -
+                                                      BITMAP_PAGE_OFFSET);
 
-                posting_key = make_key(name, value, min_timestamp, left_segsel);
-                tree_entries.emplace_back(posting_key, pid, updated);
+                if (need_init) {
+                    page_view.init_page();
+                    need_init = false;
+                }
 
-                left_segsel = cur_segsel;
-                left_it = it;
+                if (page_view.insert(value, *it)) continue;
+
+                write_page_metadata(page_buf, {name, ""}, max_timestamp);
+                auto posting_key = make_key(name, value, min_timestamp, segsel);
+                tree_entries.emplace_back(posting_key, posting_page->get_id(),
+                                          false);
+            }
+
+            min_timestamp = entry.min_timestamp;
+            segsel++;
+            posting_page = create_posting_page({name, ""}, max_timestamp,
+                                               posting_page_lock);
+
+            {
+                boost::upgrade_to_unique_lock<bptree::Page> ulock(
+                    posting_page_lock);
+                uint8_t* page_buf = posting_page->get_buffer(ulock);
+                uint8_t* buf =
+                    reinterpret_cast<uint8_t*>(page_buf + BITMAP_PAGE_OFFSET);
+
+                SortedListPageView page_view(buf, page_cache->get_page_size() -
+                                                      BITMAP_PAGE_OFFSET);
+
+                page_view.init_page();
+
+                assert(page_view.insert(value, *it));
             }
         }
+    }
 
-        if (left_it != end_it) {
-            pid = write_posting_page(name, value, min_timestamp, max_timestamp,
-                                     left_segsel, left_it, end_it, updated);
+    {
+        boost::upgrade_to_unique_lock<bptree::Page> ulock(posting_page_lock);
+        uint8_t* page_buf = posting_page->get_buffer(ulock);
+        uint8_t* buf =
+            reinterpret_cast<uint8_t*>(page_buf + BITMAP_PAGE_OFFSET);
 
-            posting_key = make_key(name, value, min_timestamp, left_segsel);
-            tree_entries.emplace_back(posting_key, pid, updated);
+        SortedListPageView page_view(buf, page_cache->get_page_size() -
+                                              BITMAP_PAGE_OFFSET);
+
+        if (!need_init && page_view.get_item_count()) {
+            write_page_metadata(page_buf, {name, ""}, max_timestamp);
+            auto posting_key = make_key(name, "", min_timestamp, segsel);
+            tree_entries.emplace_back(posting_key, posting_page->get_id(),
+                                      false);
+        }
+    }
+}
+
+void IndexTree::write_postings(TSID limit, MemIndexSnapshot& snapshot)
+{
+    std::vector<TreeEntry> tree_entries;
+    std::unordered_set<KeyType> keys;
+    bool use_sorted_list = true;
+
+    for (auto&& entries : snapshot) {
+        auto& name = entries.first;
+
+        if (use_sorted_list) {
+            std::sort(
+                entries.second.begin(), entries.second.end(),
+                [](const LabeledPostings& lhs, const LabeledPostings& rhs) {
+                    return lhs.min_timestamp < rhs.min_timestamp;
+                });
+
+            write_postings_sorted_list(limit, name, entries.second,
+                                       tree_entries);
+        } else {
+            for (auto&& entry : entries.second) {
+                auto& value = entry.value;
+                auto& bitmap = entry.postings;
+                auto min_timestamp = entry.min_timestamp;
+                auto max_timestamp = entry.max_timestamp;
+
+                write_postings_bitmap(limit, name, value, bitmap, min_timestamp,
+                                      max_timestamp, tree_entries);
+            }
         }
     }
 
