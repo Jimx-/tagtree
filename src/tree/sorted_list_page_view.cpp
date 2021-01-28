@@ -65,6 +65,18 @@ void SortedListPageView::get_values(const std::string& key,
     }
 }
 
+void SortedListPageView::scan_values(
+    std::function<bool(const std::string&)> pred, std::vector<TSID>& values)
+{
+    values.clear();
+
+    for (int i = 1; i <= get_item_count(); i++) {
+        auto [item_key, tsid] = extract_item(i);
+
+        if (pred(item_key)) values.push_back(tsid);
+    }
+}
+
 bool SortedListPageView::insert(const std::string& key, TSID value)
 {
     std::vector<uint8_t> buf;

@@ -14,6 +14,8 @@ public:
     SortedListPageView(uint8_t* buf, size_t size) : ItemPageView(buf, size) {}
 
     void get_values(const std::string& key, std::vector<TSID>& values);
+    void scan_values(std::function<bool(const std::string&)> pred,
+                     std::vector<TSID>& values);
     bool insert(const std::string& key, TSID value);
 
     friend std::ostream& operator<<(std::ostream& os,

@@ -75,15 +75,20 @@ private:
         return tsid / postings_per_page;
     }
 
+    enum class TreePageType {
+        BITMAP,
+        SORTED_LIST,
+    };
+
     size_t read_page_metadata(const uint8_t* buf, promql::Label& label,
-                              uint64_t& end_timestamp);
+                              uint64_t& end_timestamp, TreePageType& type);
     size_t write_page_metadata(uint8_t* buf, const promql::Label& label,
-                               uint64_t end_timestamp);
+                               uint64_t end_timestamp, TreePageType type);
 
     /* Create a posting page and fill in the metadata.
      * The new page is locked when returned */
     bptree::Page* create_posting_page(const promql::Label& label,
-                                      uint64_t end_timestamp,
+                                      uint64_t end_timestamp, TreePageType type,
                                       boost::upgrade_lock<bptree::Page>& lock);
 
     void write_postings_bitmap(TSID limit, const std::string& name,
@@ -106,6 +111,10 @@ private:
                    uint64_t end,
                    std::map<unsigned int, std::unique_ptr<uint8_t[]>>& bitmaps,
                    const std::set<unsigned int>& seg_mask);
+    void query_postings_sorted_list(
+        const promql::LabelMatcher& matcher, uint64_t start, uint64_t end,
+        std::map<unsigned int, std::unique_ptr<uint8_t[]>>& bitmaps,
+        const std::set<unsigned int>& seg_mask);
 
     KeyType make_key(const std::string& name, const std::string& value,
                      uint64_t start_time, unsigned int segsel);
@@ -113,6 +122,11 @@ private:
     void _hash_string_name(const std::string& str, uint8_t* out);
     void _hash_string_value(const std::string& str, uint8_t* out);
     void _hash_segsel(unsigned int segsel, uint8_t* out);
+
+    void
+    copy_to_bitmaps(const Roaring& bitmap,
+                    std::map<unsigned int, std::unique_ptr<uint8_t[]>>& bitmaps,
+                    const std::set<unsigned int>& seg_mask);
 };
 
 } // namespace tagtree
