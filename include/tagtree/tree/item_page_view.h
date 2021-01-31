@@ -26,7 +26,7 @@ protected:
     inline size_t get_free_space() const
     {
         size_t size = get_upper() - get_lower();
-        return size < LINE_POINTER_SIZE ? 0 : size;
+        return size < LINE_POINTER_SIZE ? 0 : (size - LINE_POINTER_SIZE);
     }
 
 private:

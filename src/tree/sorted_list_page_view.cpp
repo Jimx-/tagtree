@@ -1,33 +1,36 @@
 #include "tagtree/tree/sorted_list_page_view.h"
 
+#include <cassert>
 #include <cstring>
 
 namespace tagtree {
 
 #define SGN(x) (((x) > 0) ? 1 : (((x) < 0) ? -1 : 0))
 
-std::tuple<std::string, TSID>
+std::tuple<SymbolTable::Ref, TSID>
 SortedListPageView::extract_item(unsigned int offset) const
 {
+    assert(offset <= get_item_count());
     auto [buf, len] = get_item(offset);
-    auto key_len = len - sizeof(TSID);
+    assert(len == sizeof(SymbolTable::Ref) + sizeof(TSID));
+
+    auto key_len = sizeof(SymbolTable::Ref);
+    auto key = *(SymbolTable::Ref*)buf;
     auto tsid = *(TSID*)&buf[key_len];
-    std::string key{reinterpret_cast<const char*>(buf), key_len};
 
     return std::tie(key, tsid);
 }
 
-void SortedListPageView::serialize_item(const std::string& key, TSID value,
+void SortedListPageView::serialize_item(SymbolTable::Ref key, TSID value,
                                         std::vector<uint8_t>& out)
 {
-    auto key_len = key.length();
-    out.resize(key_len + sizeof(TSID));
-    ::memcpy(&out[0], key.c_str(), key_len);
-    ::memcpy(&out[key_len], &value, sizeof(TSID));
+    out.resize(sizeof(SymbolTable::Ref) + sizeof(TSID));
+    ::memcpy(&out[0], &key, sizeof(SymbolTable::Ref));
+    ::memcpy(&out[sizeof(SymbolTable::Ref)], &value, sizeof(TSID));
 }
 
-size_t SortedListPageView::binary_search_page(const std::string& key,
-                                              TSID value, bool next_key)
+size_t SortedListPageView::binary_search_page(SymbolTable::Ref key, TSID value,
+                                              bool next_key)
 {
     auto low = FIRST_KEY_OFFSET;
     auto high = get_item_count() + 1;
@@ -38,7 +41,7 @@ size_t SortedListPageView::binary_search_page(const std::string& key,
 
         auto [mid_key, tsid] = extract_item(mid);
 
-        int cmp = SGN(key.compare(mid_key));
+        int cmp = SGN((int32_t)key - (int32_t)mid_key);
         if (cmp == 0) cmp = SGN((int64_t)value - (int64_t)tsid);
 
         if (cmp >= cond)
@@ -50,7 +53,7 @@ size_t SortedListPageView::binary_search_page(const std::string& key,
     return low;
 }
 
-void SortedListPageView::get_values(const std::string& key,
+void SortedListPageView::get_values(SymbolTable::Ref key,
                                     std::vector<TSID>& values)
 {
     values.clear();
@@ -65,8 +68,8 @@ void SortedListPageView::get_values(const std::string& key,
     }
 }
 
-void SortedListPageView::scan_values(
-    std::function<bool(const std::string&)> pred, std::vector<TSID>& values)
+void SortedListPageView::scan_values(std::function<bool(SymbolTable::Ref)> pred,
+                                     std::vector<TSID>& values)
 {
     values.clear();
 
@@ -77,11 +80,13 @@ void SortedListPageView::scan_values(
     }
 }
 
-bool SortedListPageView::insert(const std::string& key, TSID value)
+bool SortedListPageView::insert(SymbolTable::Ref key, TSID value)
 {
     std::vector<uint8_t> buf;
 
     serialize_item(key, value, buf);
+    assert(buf.size() == sizeof(SymbolTable::Ref) + sizeof(TSID));
+
     if (buf.size() > get_free_space()) return false;
 
     int offset = binary_search_page(key, value, false);
