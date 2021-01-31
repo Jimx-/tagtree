@@ -80,6 +80,9 @@ private:
         SORTED_LIST,
     };
 
+    TreePageType choose_page_type(const std::string& tag_name,
+                                  const std::vector<LabeledPostings>& entry);
+
     size_t read_page_metadata(const uint8_t* buf, promql::Label& label,
                               uint64_t& end_timestamp, TreePageType& type);
     size_t write_page_metadata(uint8_t* buf, const promql::Label& label,

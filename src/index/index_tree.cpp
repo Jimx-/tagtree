@@ -596,12 +596,13 @@ void IndexTree::write_postings(TSID limit, MemIndexSnapshot& snapshot)
 {
     std::vector<TreeEntry> tree_entries;
     std::unordered_set<KeyType> keys;
-    bool use_sorted_list = true;
 
     for (auto&& entries : snapshot) {
         auto& name = entries.first;
+        auto type = choose_page_type(name, entries.second);
 
-        if (use_sorted_list) {
+        switch (type) {
+        case TreePageType::SORTED_LIST:
             std::sort(
                 entries.second.begin(), entries.second.end(),
                 [](const LabeledPostings& lhs, const LabeledPostings& rhs) {
@@ -610,7 +611,8 @@ void IndexTree::write_postings(TSID limit, MemIndexSnapshot& snapshot)
 
             write_postings_sorted_list(limit, name, entries.second,
                                        tree_entries);
-        } else {
+            break;
+        case TreePageType::BITMAP:
             for (auto&& entry : entries.second) {
                 auto& value = entry.value;
                 auto& bitmap = entry.postings;
@@ -620,6 +622,8 @@ void IndexTree::write_postings(TSID limit, MemIndexSnapshot& snapshot)
                 write_postings_bitmap(limit, name, value, bitmap, min_timestamp,
                                       max_timestamp, tree_entries);
             }
+
+            break;
         }
     }
 
@@ -712,6 +716,21 @@ bptree::PageID IndexTree::write_posting_page(
     page_cache->unpin_page(posting_page, true, posting_page_lock);
 
     return posting_page->get_id();
+}
+
+IndexTree::TreePageType
+IndexTree::choose_page_type(const std::string& tag_name,
+                            const std::vector<LabeledPostings>& entry)
+{
+    size_t sum = 0;
+
+    for (auto&& p : entry) {
+        sum += entry.size();
+    }
+
+    if (sum < entry.size() * 10) return TreePageType::SORTED_LIST;
+
+    return TreePageType::BITMAP;
 }
 
 size_t IndexTree::read_page_metadata(const uint8_t* buf, promql::Label& label,
