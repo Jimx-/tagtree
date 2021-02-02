@@ -555,6 +555,8 @@ void IndexTree::write_postings_sorted_list(
                                           false);
             }
 
+            page_cache->unpin_page(posting_page, true, posting_page_lock);
+
             min_timestamp = entry.min_timestamp;
             segsel++;
             posting_page = create_posting_page({name, ""}, max_timestamp,
@@ -596,6 +598,8 @@ void IndexTree::write_postings_sorted_list(
                                       false);
         }
     }
+
+    page_cache->unpin_page(posting_page, true, posting_page_lock);
 }
 
 void IndexTree::write_postings(TSID limit, MemIndexSnapshot& snapshot)
