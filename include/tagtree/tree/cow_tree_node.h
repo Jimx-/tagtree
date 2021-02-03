@@ -99,6 +99,8 @@ public:
     virtual void serialize(uint8_t* buf, size_t size) const
     {
         /* | size | keys | child_pages | */
+        assert(!this->size ||
+               child_pages[this->size] != bptree::Page::INVALID_PAGE_ID);
         *reinterpret_cast<uint32_t*>(buf) = (uint32_t)this->size;
         buf += sizeof(uint32_t);
         size -= sizeof(uint32_t);
@@ -106,7 +108,8 @@ public:
             key_serializer.serialize(buf, size, keys.begin(), keys.end());
         buf += nbytes;
         size -= nbytes;
-        ::memcpy(buf, child_pages.begin(), sizeof(bptree::PageID) * N);
+        assert(sizeof(bptree::PageID) * (N + 1) <= size);
+        ::memcpy(buf, child_pages.begin(), sizeof(bptree::PageID) * (N + 1));
     }
     virtual void deserialize(const uint8_t* buf, size_t size)
     {
@@ -117,10 +120,13 @@ public:
             key_serializer.deserialize(keys.begin(), keys.end(), buf, size);
         buf += nbytes;
         size -= nbytes;
-        ::memcpy(child_pages.begin(), buf, sizeof(bptree::PageID) * N);
+        assert(sizeof(bptree::PageID) * (N + 1) <= size);
+        ::memcpy(child_pages.begin(), buf, sizeof(bptree::PageID) * (N + 1));
         for (auto&& p : child_cache) {
             p.reset();
         }
+        assert(!this->size ||
+               child_pages[this->size] != bptree::Page::INVALID_PAGE_ID);
     }
 
     BaseNodeType* get_child(int idx)
@@ -189,6 +195,7 @@ public:
 
         int child_idx = it - new_node_ptr->keys.begin();
         auto* child = new_node_ptr->get_child(child_idx);
+        assert(child);
 
         std::shared_ptr<BaseNodeType> new_child, child_sibling;
         std::tie(new_child, child_sibling) =
@@ -221,6 +228,9 @@ public:
         new_node_ptr->child_cache[child_idx + 1] = std::move(child_sibling);
         new_node_ptr->size++;
 
+        assert(new_node_ptr->child_pages[new_node_ptr->size] !=
+               bptree::Page::INVALID_PAGE_ID);
+
         if (new_node_ptr->size == N) {
             right_sibling = txn.template create_node<SelfType>(this->parent);
 
@@ -231,7 +241,7 @@ public:
                      right_sibling->size * sizeof(K));
             ::memcpy(right_sibling->child_pages.begin(),
                      &new_node_ptr->child_pages[N / 2 + 1],
-                     right_sibling->size * sizeof(V));
+                     (right_sibling->size + 1) * sizeof(bptree::PageID));
 
             for (size_t i = N / 2 + 1, j = 0; i <= new_node_ptr->size;
                  i++, j++) {
@@ -245,6 +255,9 @@ public:
 
             split_key = new_node_ptr->keys[N / 2];
             new_node_ptr->size = N / 2;
+
+            assert(right_sibling->child_pages[right_sibling->size] !=
+                   bptree::Page::INVALID_PAGE_ID);
         }
 
         return std::make_pair(new_node, right_sibling);
