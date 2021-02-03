@@ -24,8 +24,8 @@ public:
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matchers,
                            uint64_t start, uint64_t end, MemPostingList& tsids);
 
-    void exists(const std::vector<promql::Label>& labels,
-                MemPostingList& tsids);
+    void exists(const std::vector<promql::Label>& labels, MemPostingList& tsids,
+                bool skip_tree = false);
 
     bool get_labels(TSID tsid, std::vector<promql::Label>& labels);
 

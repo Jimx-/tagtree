@@ -46,7 +46,7 @@ TSID IndexServer::add_series(uint64_t t,
 }
 
 void IndexServer::exists(const std::vector<promql::Label>& labels,
-                         MemPostingList& tsids)
+                         MemPostingList& tsids, bool skip_tree)
 {
     /* check if series matching given matchers already exists */
     auto entry = series_manager->get_by_label_set(labels);
@@ -57,6 +57,8 @@ void IndexServer::exists(const std::vector<promql::Label>& labels,
         return;
     }
 
+    if (skip_tree) return;
+
     std::vector<promql::LabelMatcher> matchers;
     for (auto&& p : labels) {
         matchers.emplace_back(MatchOp::EQL, p.name, p.value);
@@ -64,7 +66,7 @@ void IndexServer::exists(const std::vector<promql::Label>& labels,
 
     mem_index.resolve_label_matchers(matchers, tsids);
 
-    if (!tsids.isEmpty()) {
+    if (!tsids.isEmpty() || skip_tree) {
         return;
     }
 
