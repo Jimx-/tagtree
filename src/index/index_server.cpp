@@ -57,8 +57,6 @@ void IndexServer::exists(const std::vector<promql::Label>& labels,
         return;
     }
 
-    if (skip_tree) return;
-
     std::vector<promql::LabelMatcher> matchers;
     for (auto&& p : labels) {
         matchers.emplace_back(MatchOp::EQL, p.name, p.value);
@@ -187,19 +185,20 @@ bool IndexServer::compactable(TSID current_id)
 void IndexServer::compact(TSID current_id)
 {
     MemIndexSnapshot snapshot;
+    size_t last_segment;
 
-    wal.close_segment();
+    last_segment = wal.close_segment();
 
     mem_index.set_low_watermark(current_id);
     mem_index.snapshot(current_id, snapshot);
 
-    series_manager->flush();
-
     index_tree.write_postings(current_id, snapshot);
+
+    series_manager->flush();
 
     mem_index.gc();
 
-    wal.write_checkpoint(current_id);
+    wal.write_checkpoint(current_id, last_segment);
 
     compacting.store(false, std::memory_order_release);
 }

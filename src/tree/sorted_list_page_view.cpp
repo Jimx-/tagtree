@@ -58,6 +58,12 @@ void SortedListPageView::get_values(SymbolTable::Ref key,
 {
     values.clear();
 
+    auto [first_key, first_tsid] = extract_item(FIRST_KEY_OFFSET);
+    if (first_key > key) return;
+
+    auto [last_key, last_tsid] = extract_item(get_item_count());
+    if (last_key < key) return;
+
     int i = binary_search_page(key, 0, false);
     for (; i <= get_item_count(); i++) {
         auto [item_key, tsid] = extract_item(i);

@@ -225,7 +225,7 @@ void WAL::log_record(uint8_t* rec, size_t length, bool flush)
     }
 }
 
-void WAL::get_next_segment()
+size_t WAL::get_next_segment()
 {
     if (page_end > 0) {
         flush_page(true);
@@ -235,6 +235,8 @@ void WAL::get_next_segment()
 
     create_segment(last_segment);
     open_write_segment(last_segment);
+
+    return last_segment;
 }
 
 void WAL::flush_page(bool reset)
@@ -266,14 +268,14 @@ void WAL::flush_page(bool reset)
     }
 }
 
-void WAL::close_segment()
+size_t WAL::close_segment()
 {
     std::lock_guard<std::mutex> lock(mutex);
 
-    get_next_segment();
+    return get_next_segment();
 }
 
-void WAL::write_checkpoint(TSID watermark)
+void WAL::write_checkpoint(TSID watermark, size_t segment)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -282,7 +284,7 @@ void WAL::write_checkpoint(TSID watermark)
                     S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
     uint32_t buf[3];
-    buf[0] = last_segment;
+    buf[0] = segment;
     buf[1] = watermark;
     buf[2] = CRC::Calculate(buf, 2 * sizeof(uint32_t), CRC::CRC_32());
 
@@ -326,6 +328,12 @@ void WAL::last_checkpoint(CheckpointStats& stats)
 
     stats.last_segment = buf[0];
     stats.low_watermark = buf[1];
+
+    uint32_t crc = CRC::Calculate(buf, 2 * sizeof(uint32_t), CRC::CRC_32());
+    if (crc != buf[2]) {
+        throw std::runtime_error(
+            "failed to read last checkpoint (checksum error)");
+    }
 }
 
 } // namespace tagtree

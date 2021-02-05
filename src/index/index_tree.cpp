@@ -648,6 +648,7 @@ void IndexTree::write_postings(TSID limit, MemIndexSnapshot& snapshot)
         }
     }
 
+    page_cache->flush_all_pages();
     cow_tree.commit(txn);
 }
 

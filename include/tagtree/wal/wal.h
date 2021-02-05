@@ -24,11 +24,11 @@ public:
     explicit WAL(const std::string& log_dir);
 
     void log_record(uint8_t* rec, size_t length, bool flush);
-    void close_segment();
+    size_t close_segment();
 
     void get_segment_range(size_t& start, size_t& end);
 
-    void write_checkpoint(TSID watermark);
+    void write_checkpoint(TSID watermark, size_t segment);
     void last_checkpoint(CheckpointStats& stats);
 
     std::unique_ptr<WALReader> get_segment_reader(size_t seg);
@@ -64,7 +64,7 @@ private:
     void create_segment(size_t seg);
     void open_write_segment(size_t seg);
 
-    void get_next_segment();
+    size_t get_next_segment();
     void flush_page(bool reset);
 };
 
