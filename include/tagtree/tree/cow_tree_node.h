@@ -5,6 +5,8 @@
 #include "bptree/serializer.h"
 #include "tagtree/tree/cow_tree.h"
 
+#include <optional>
+
 namespace tagtree {
 
 template <unsigned int N, typename K, typename V, typename KeySerializer,
@@ -39,7 +41,8 @@ public:
     virtual void serialize(uint8_t* buf, size_t size) const = 0;
     virtual void deserialize(const uint8_t* buf, size_t size) = 0;
 
-    virtual void get_values(const K& key, bool upper_bound, bool collect,
+    virtual void get_values(const K& key, bool collect,
+                            std::optional<K>* next_key,
                             KeyListIterator* key_first,
                             KeyListIterator* key_last,
                             ValueListIterator& value_first,
@@ -148,7 +151,7 @@ public:
     }
 
     virtual void
-    get_values(const K& key, bool upper_bound, bool collect,
+    get_values(const K& key, bool collect, std::optional<K>* next_key,
                typename BaseNodeType::KeyListIterator* key_first,
                typename BaseNodeType::KeyListIterator* key_last,
                typename BaseNodeType::ValueListIterator& value_first,
@@ -156,22 +159,19 @@ public:
     {
         /* direct the search to the child */
         int child_idx;
-        if (upper_bound) {
-            child_idx =
-                std::upper_bound(keys.begin(), keys.begin() + this->size, key,
-                                 this->kcmp) -
-                keys.begin();
-        } else {
-            child_idx =
-                std::lower_bound(keys.begin(), keys.begin() + this->size, key,
-                                 this->kcmp) -
-                keys.begin();
+        child_idx = std::distance(keys.begin(),
+                                  std::upper_bound(keys.begin(),
+                                                   keys.begin() + this->size,
+                                                   key, this->kcmp));
+
+        if (next_key && child_idx < this->size) {
+            *next_key = keys[child_idx];
         }
 
         auto child = get_child(child_idx);
         if (!child) return;
 
-        child->get_values(key, upper_bound, collect, key_first, key_last,
+        child->get_values(key, collect, next_key, key_first, key_last,
                           value_first, value_last);
     }
 
@@ -348,7 +348,7 @@ public:
                                               size);
     }
     virtual void
-    get_values(const K& key, bool upper_bound, bool collect,
+    get_values(const K& key, bool collect, std::optional<K>* next_key,
                typename BaseNodeType::KeyListIterator* key_first,
                typename BaseNodeType::KeyListIterator* key_last,
                typename BaseNodeType::ValueListIterator& value_first,
@@ -389,6 +389,8 @@ public:
         }
 
         if (update) {
+            updated = false;
+
             auto it = std::lower_bound(new_node_ptr->keys.begin(),
                                        new_node_ptr->keys.begin() +
                                            new_node_ptr->size,
@@ -399,8 +401,6 @@ public:
                 auto idx = std::distance(new_node_ptr->keys.begin(), it);
                 new_node_ptr->values[idx] = value;
                 updated = true;
-            } else {
-                updated = false;
             }
 
             return std::make_pair(new_node, nullptr);
@@ -431,7 +431,7 @@ public:
                      &new_node_ptr->values[N / 2],
                      right_sibling->size * sizeof(V));
 
-            split_key = new_node_ptr->keys[N / 2 - 1];
+            split_key = new_node_ptr->keys[N / 2];
             new_node_ptr->size = N / 2;
         }
 
@@ -452,6 +452,7 @@ public:
     virtual void print(std::ostream& os, const std::string& padding = "")
     {
         os << padding << "Page ID: " << this->get_pid() << std::endl;
+        os << padding << "Page size: " << this->size << std::endl;
 
         for (int i = 0; i < this->size; i++) {
             os << padding << keys[i] << " -> " << values[i] << std::endl;

@@ -370,7 +370,7 @@ void IndexTree::resolve_label_matchers(
 
             while ((it1 != bitmaps.end()) && (it2 != tag_bitmaps.end())) {
                 if (it1->first < it2->first) {
-                    bitmaps.erase(it1++);
+                    it1 = bitmaps.erase(it1);
                 } else if (it2->first < it1->first) {
                     ++it2;
                 } else {
@@ -466,7 +466,7 @@ void IndexTree::write_postings_bitmap(TSID limit, const std::string& name,
     ++it;
     auto end_it = bitmap.begin();
     end_it.equalorlarger(limit);
-    if (end_it != bitmap.end()) end_it++;
+    if (end_it != bitmap.end() && *end_it == limit) end_it++;
 
     bool updated;
     bptree::PageID pid;
@@ -684,6 +684,7 @@ bptree::PageID IndexTree::write_posting_page(
             TreePageType page_type;
 
             read_page_metadata(buf, page_label, page_end_timestamp, page_type);
+            end_time = std::max(end_time, page_end_timestamp);
 
             if (page_label.name != name || page_label.value != value ||
                 page_type != TreePageType::BITMAP) {
@@ -719,6 +720,7 @@ bptree::PageID IndexTree::write_posting_page(
             reinterpret_cast<uint64_t*>(posting_buf + BITMAP_PAGE_OFFSET);
 
         for (auto it = first; it != last; it++) {
+            assert(tsid_segsel(*it) == segsel);
             size_t bitnum = *it % postings_per_page;
             bitmap[bitnum >> 6] |= 1ULL << (bitnum & 0x3f);
         }
@@ -746,6 +748,7 @@ IndexTree::choose_page_type(const std::string& tag_name,
     if (sorted_size % page_size)
         sorted_size += page_size - (sorted_size % page_size);
 
+    return TreePageType::BITMAP;
     if (sorted_size < bitmap_size) return TreePageType::SORTED_LIST;
 
     return TreePageType::BITMAP;

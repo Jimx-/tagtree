@@ -169,7 +169,7 @@ void MemIndex::label_values(const std::string& label_name,
 
 void MemIndex::snapshot(TSID limit, MemIndexSnapshot& snapshot)
 {
-    std::unique_lock<std::shared_mutex> lock(mutex);
+    std::shared_lock<std::shared_mutex> lock(mutex);
 
     snapshot.clear();
 

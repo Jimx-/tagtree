@@ -109,7 +109,7 @@ public:
         typename BaseNodeType::ValueListIterator value_first = nullptr,
                                                  value_last = nullptr;
         auto* root = get_read_tree(version);
-        root->get_values(key, false, false, nullptr, nullptr, value_first,
+        root->get_values(key, false, nullptr, nullptr, nullptr, value_first,
                          value_last);
         value_list.assign(value_first, value_last);
     }
@@ -268,14 +268,15 @@ public:
     }
 
 private:
-    void collect_values(Version version, const K& key, bool upper_bound,
+    void collect_values(Version version, const K& key,
+                        std::optional<K>* next_key,
                         typename BaseNodeType::KeyListIterator& key_first,
                         typename BaseNodeType::KeyListIterator& key_last,
                         typename BaseNodeType::ValueListIterator& value_first,
                         typename BaseNodeType::ValueListIterator& value_last)
     {
         auto* root = get_read_tree(version);
-        root->get_values(key, upper_bound, true, &key_first, &key_last,
+        root->get_values(key, true, next_key, &key_first, &key_last,
                          value_first, value_last);
     }
 
@@ -316,6 +317,7 @@ public:
         typename BaseNodeType::ValueListIterator value_first;
         typename BaseNodeType::ValueListIterator value_last;
         value_type kvp;
+        std::optional<K> next_key;
         bool ended;
         Version version;
         KeyComparator kcmp;
@@ -325,10 +327,10 @@ public:
 
         iterator(container_type* tree, Version version, const K& key,
                  KeyComparator kcmp = KeyComparator{})
-            : tree(tree), kcmp(kcmp), version(version)
+            : tree(tree), kcmp(kcmp), version(version), next_key(std::nullopt)
         {
             ended = false;
-            tree->collect_values(version, key, false, key_first, key_last,
+            tree->collect_values(version, key, &next_key, key_first, key_last,
                                  value_first, value_last);
             auto it = std::lower_bound(key_first, key_last, key, kcmp);
             if (it == key_last) {
@@ -356,10 +358,16 @@ public:
 
         void get_next_batch()
         {
-            K last_key = *key_first;
-            tree->collect_values(version, last_key, true, key_first, key_last,
+            if (!next_key) {
+                ended = true;
+                return;
+            }
+
+            K key = *next_key;
+            next_key = std::nullopt;
+            tree->collect_values(version, key, &next_key, key_first, key_last,
                                  value_first, value_last);
-            auto it = std::upper_bound(key_first, key_last, last_key, kcmp);
+            auto it = std::lower_bound(key_first, key_last, key, kcmp);
             if (it == key_last) {
                 ended = true;
             } else {
