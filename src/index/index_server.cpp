@@ -189,7 +189,7 @@ void IndexServer::compact(TSID current_id)
 
     last_segment = wal.close_segment();
 
-    mem_index.set_low_watermark(current_id);
+    mem_index.set_low_watermark(current_id, true);
     mem_index.snapshot(current_id, snapshot);
 
     index_tree.write_postings(current_id, snapshot);

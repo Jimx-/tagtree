@@ -4,7 +4,7 @@
 
 namespace tagtree {
 
-MemIndex::MemIndex(size_t capacity) : low_watermark(0)
+MemIndex::MemIndex(size_t capacity) : low_watermark(0), current_limit(NO_LIMIT)
 {
     map.reserve(capacity);
 }
@@ -41,10 +41,11 @@ bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid,
     return true;
 }
 
-void MemIndex::set_low_watermark(TSID wm)
+void MemIndex::set_low_watermark(TSID wm, bool force)
 {
     std::unique_lock<std::shared_mutex> lock(mutex);
     low_watermark = wm;
+    if (force) current_limit = wm;
 }
 
 void MemIndex::resolve_label_matchers(
@@ -192,12 +193,15 @@ void MemIndex::snapshot(TSID limit, MemIndexSnapshot& snapshot)
 
         snapshot[name.first] = entries;
     }
+
+    current_limit = NO_LIMIT;
 }
 
 void MemIndex::add_label(const promql::Label& label, TSID tsid,
                          uint64_t timestamp)
 {
-    map[label.name][label.value].add(tsid, timestamp);
+    bool set_next = current_limit != NO_LIMIT && tsid > current_limit;
+    map[label.name][label.value].add(tsid, timestamp, set_next);
 }
 
 void MemIndex::gc()
@@ -210,7 +214,6 @@ void MemIndex::gc()
 
         for (auto value_it = name_map.begin(); value_it != name_map.end();) {
             auto& bitmap = value_it->second.bitmap;
-            auto& series_set = value_it->second.series_set;
 
             auto last_it = bitmap.begin();
             last_it.equalorlarger(low_watermark);
@@ -227,17 +230,8 @@ void MemIndex::gc()
 
             value_it->second.bitmap = std::move(new_bitmap);
 
-            std::set<std::tuple<uint64_t, TSID>> new_set;
-            uint64_t min_timestamp = UINT64_MAX;
-            for (auto&& p : series_set) {
-                if (std::get<1>(p) >= low_watermark) {
-                    new_set.insert(p);
-                    min_timestamp = std::min(min_timestamp, std::get<0>(p));
-                }
-            }
-
-            value_it->second.series_set = new_set;
-            value_it->second.min_timestamp = min_timestamp;
+            value_it->second.min_timestamp = value_it->second.next_timestamp;
+            value_it->second.next_timestamp = UINT64_MAX;
 
             value_it++;
         }

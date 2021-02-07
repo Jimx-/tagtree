@@ -45,7 +45,7 @@ public:
     void label_values(const std::string& label_name,
                       std::unordered_set<std::string>& values);
 
-    void set_low_watermark(TSID wm);
+    void set_low_watermark(TSID wm, bool force = false);
     void snapshot(TSID limit, MemIndexSnapshot& snapshot);
 
     void gc();
@@ -58,6 +58,9 @@ private:
     MemMapType map;
     std::shared_mutex mutex;
     TSID low_watermark;
+
+    static const TSID NO_LIMIT = UINT64_MAX;
+    TSID current_limit;
 
     void add_label(const promql::Label& label, TSID tsid, uint64_t timestamp);
 
