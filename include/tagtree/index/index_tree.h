@@ -94,6 +94,11 @@ private:
                                       uint64_t end_timestamp, TreePageType type,
                                       boost::upgrade_lock<bptree::Page>& lock);
 
+    bool get_sorted_list_initial_segment(
+        const std::string& name, uint64_t start_time, uint64_t end_time,
+        uint32_t& segsel, bptree::Page*& posting_page,
+        boost::upgrade_lock<bptree::Page>& posting_page_lock);
+
     void write_postings_bitmap(TSID limit, const std::string& name,
                                const std::string& value, const Roaring& bitmap,
                                uint64_t min_timestamp, uint64_t max_timestamp,

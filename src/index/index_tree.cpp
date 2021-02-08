@@ -98,8 +98,8 @@ void IndexTree::query_postings(
     case MatchOp::EQL:
         /* key range: from   | hash(name) | hash(value)     | *
          *              to   | hash(name) | hash(value) + 1 | */
-        start_key = make_key(name, value, 0, 0);
-        end_key = make_key(name, value, end, (1 << (SEGSEL_BYTES * 8)) - 1);
+        start_key = make_key(name, value, 0, UINT32_MAX);
+        end_key = make_key(name, value, end, UINT32_MAX);
         break;
     case MatchOp::NEQ:
         /* key range: from   | hash(name)     | 0 | *
@@ -121,7 +121,7 @@ void IndexTree::query_postings(
         /* key range: from   | hash(name)     | 0 | *
          *              to   | hash(name) + 1 | 0 | */
         {
-            start_key = make_key(name, value, 0, 0);
+            start_key = make_key(name, value, 0, UINT32_MAX);
 
             start_key.get_tag_name(name_buf);
             incr_buf(name_buf, NAME_BYTES);
@@ -266,8 +266,8 @@ void IndexTree::query_postings_sorted_list(
     if (matcher.op == promql::MatchOp::EQL)
         value_ref = sm->add_symbol(matcher.value);
 
-    start_key = make_key(matcher.name, "", 0, 0);
-    end_key = make_key(matcher.name, "", end, 0);
+    start_key = make_key(matcher.name, "", 0, UINT32_MAX);
+    end_key = make_key(matcher.name, "", end, UINT32_MAX);
     start_key.clear_tag_value();
     end_key.clear_tag_value();
 
@@ -321,7 +321,10 @@ void IndexTree::query_postings_sorted_list(
             auto name = matcher.name;
 
             page_view.scan_values(
-                [this, sm, &matcher, &name](SymbolTable::Ref ref) {
+                [this, sm, value_ref, &matcher, &name](SymbolTable::Ref ref) {
+                    if (matcher.op == promql::MatchOp::NEQ && ref == value_ref)
+                        return false;
+
                     return matcher.match({name, sm->get_symbol(ref)});
                 },
                 series_list);
@@ -416,7 +419,7 @@ void IndexTree::label_values(const std::string& label_name,
     KeyType start_key, end_key;
     uint8_t name_buf[NAME_BYTES];
 
-    start_key = make_key(label_name, "", 0, 0);
+    start_key = make_key(label_name, "", 0, UINT32_MAX);
 
     start_key.get_tag_name(name_buf);
     incr_buf(name_buf, NAME_BYTES);
@@ -495,6 +498,68 @@ void IndexTree::write_postings_bitmap(TSID limit, const std::string& name,
     }
 }
 
+bool IndexTree::get_sorted_list_initial_segment(
+    const std::string& name, uint64_t start_time, uint64_t end_time,
+    uint32_t& segsel, bptree::Page*& posting_page,
+    boost::upgrade_lock<bptree::Page>& posting_page_lock)
+{
+    bool updated = false;
+
+    auto start_key = make_key(name, "", start_time, UINT32_MAX);
+    start_key.clear_tag_value();
+
+    segsel = 0;
+    posting_page = nullptr;
+
+    auto it = cow_tree.begin(start_key);
+
+    while (it != cow_tree.end()) {
+        auto name_timestamp_part = it->first;
+        name_timestamp_part.set_segnum(0);
+        start_key.set_segnum(0);
+
+        if (start_key != name_timestamp_part) break;
+
+        boost::upgrade_lock<bptree::Page> plock;
+        auto page = page_cache->fetch_page(it->second, plock);
+        assert(page != nullptr);
+
+        const uint8_t* buf = page->get_buffer(plock);
+        promql::Label page_label;
+        uint64_t page_end_timestamp;
+        TreePageType page_type;
+
+        read_page_metadata(buf, page_label, page_end_timestamp, page_type);
+        end_time = std::max(end_time, page_end_timestamp);
+
+        if (page_label.name != name || page_type != TreePageType::SORTED_LIST) {
+            page_cache->unpin_page(page, false, plock);
+            continue;
+        }
+
+        posting_page = page_cache->new_page(posting_page_lock);
+        boost::upgrade_to_unique_lock<bptree::Page> ulock(posting_page_lock);
+
+        uint8_t* new_buf = posting_page->get_buffer(ulock);
+        ::memcpy(new_buf, buf, page->get_size());
+
+        write_page_metadata(new_buf, {name, ""}, end_time,
+                            TreePageType::SORTED_LIST);
+
+        page_cache->unpin_page(page, false, plock);
+        segsel = it->first.get_segnum();
+        updated = true;
+        break;
+    }
+
+    if (!posting_page) {
+        posting_page = create_posting_page(
+            {name, ""}, end_time, TreePageType::SORTED_LIST, posting_page_lock);
+    }
+
+    return updated;
+}
+
 void IndexTree::write_postings_sorted_list(
     TSID limit, const std::string& name,
     const std::vector<LabeledPostings>& entries,
@@ -505,15 +570,17 @@ void IndexTree::write_postings_sorted_list(
     bptree::Page* posting_page = nullptr;
     boost::upgrade_lock<bptree::Page> posting_page_lock;
     uint64_t min_timestamp, max_timestamp;
-    unsigned int segsel = 0;
-    int need_init = true;
+    unsigned int segsel;
+    bool updated, need_init;
 
     min_timestamp = entries.begin()->min_timestamp;
     max_timestamp = entries.begin()->max_timestamp;
 
-    posting_page =
-        create_posting_page({name, ""}, max_timestamp,
-                            TreePageType::SORTED_LIST, posting_page_lock);
+    updated = get_sorted_list_initial_segment(name, min_timestamp,
+                                              max_timestamp, segsel,
+                                              posting_page, posting_page_lock);
+    need_init = !updated;
+    assert(posting_page);
 
     for (auto&& entry : entries) {
         auto& value = entry.value;
@@ -525,7 +592,7 @@ void IndexTree::write_postings_sorted_list(
         auto it = left_it;
         auto end_it = bitmap.begin();
         end_it.equalorlarger(limit);
-        if (end_it != bitmap.end()) end_it++;
+        if (end_it != bitmap.end() && *end_it == limit) end_it++;
 
         max_timestamp = std::max(max_timestamp, entry.max_timestamp);
 
@@ -552,7 +619,8 @@ void IndexTree::write_postings_sorted_list(
                 auto posting_key = make_key(name, value, min_timestamp, segsel);
                 posting_key.clear_tag_value();
                 tree_entries.emplace_back(posting_key, posting_page->get_id(),
-                                          false);
+                                          updated);
+                updated = false;
             }
 
             page_cache->unpin_page(posting_page, true, posting_page_lock);
@@ -595,7 +663,7 @@ void IndexTree::write_postings_sorted_list(
             auto posting_key = make_key(name, "", min_timestamp, segsel);
             posting_key.clear_tag_value();
             tree_entries.emplace_back(posting_key, posting_page->get_id(),
-                                      false);
+                                      updated);
         }
     }
 
@@ -741,15 +809,14 @@ IndexTree::choose_page_type(const std::string& tag_name,
     size_t sum = 0;
 
     for (auto&& p : entry) {
-        sum += entry.size();
+        sum += p.postings.cardinality();
     }
 
     size_t sorted_size = sum * (sizeof(TSID) + sizeof(SymbolTable::Ref));
     if (sorted_size % page_size)
         sorted_size += page_size - (sorted_size % page_size);
 
-    return TreePageType::BITMAP;
-    if (sorted_size < bitmap_size) return TreePageType::SORTED_LIST;
+    if (sorted_size <= bitmap_size) return TreePageType::SORTED_LIST;
 
     return TreePageType::BITMAP;
 }

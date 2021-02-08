@@ -92,7 +92,7 @@ public:
         if (get_timestamp() < rhs.get_timestamp()) return true;
         if (get_timestamp() > rhs.get_timestamp()) return false;
 
-        return get_segnum() < rhs.get_segnum();
+        return get_segnum() > rhs.get_segnum();
     }
 
     bool operator>(const TupleKey<NB, VB>& rhs) const
@@ -109,7 +109,7 @@ public:
         if (get_timestamp() > rhs.get_timestamp()) return true;
         if (get_timestamp() < rhs.get_timestamp()) return false;
 
-        return get_segnum() > rhs.get_segnum();
+        return get_segnum() < rhs.get_segnum();
     }
 
     bool operator>=(const TupleKey<NB, VB>& rhs) const
