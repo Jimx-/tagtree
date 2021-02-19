@@ -2,6 +2,8 @@
 
 #include "CRC.h"
 
+#undef NDEBUG
+#include <cassert>
 #include <cstdlib>
 #include <cstring>
 #include <fcntl.h>
@@ -80,7 +82,7 @@ bool SeriesFile::read_entry(unsigned int i, RefSeriesEntry* entry)
 
     uint32_t crc_file = *(uint32_t*)page_buf;
     if (crc != crc_file) {
-        throw std::runtime_error("series entry corrupted(bad checksum)");
+        throw std::runtime_error("series entry corrupted (bad checksum)");
     }
 
     return true;
@@ -236,7 +238,8 @@ const uint8_t* SeriesFile::read_page(off_t page_offset)
     auto pp = page.get();
 
     lseek(fd, page_offset, SEEK_SET);
-    read(fd, page.get(), PAGE_SIZE);
+    auto n = read(fd, page.get(), PAGE_SIZE);
+    assert(n == PAGE_SIZE);
     page_cache[page_offset] = std::move(page);
 
     return pp;
@@ -255,7 +258,8 @@ void SeriesFile::flush()
     }
 
     for (auto&& p : write_pages) {
-        lseek(fd, p.first, SEEK_SET);
+        auto ret = lseek(fd, p.first, SEEK_SET);
+        assert(ret == p.first);
 
         ssize_t retval;
         retval = write(fd, p.second.get(), PAGE_SIZE);

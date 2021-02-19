@@ -31,8 +31,8 @@ class IndexServer;
 
 class IndexTree {
 public:
-    IndexTree(IndexServer* server, std::string_view filename,
-              size_t cache_size);
+    IndexTree(IndexServer* server, std::string_view filename, size_t cache_size,
+              bool bitmap_only);
     ~IndexTree();
 
     void write_postings(TSID limit, MemIndexSnapshot& snapshot);
@@ -69,6 +69,7 @@ private:
     std::unique_ptr<bptree::AbstractPageCache> page_cache;
     COWTreeType cow_tree;
     size_t postings_per_page;
+    bool bitmap_only;
 
     inline unsigned int tsid_segsel(TSID tsid)
     {

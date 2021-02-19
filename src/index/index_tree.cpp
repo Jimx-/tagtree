@@ -69,10 +69,10 @@ void IndexTree::copy_to_bitmaps(
 }
 
 IndexTree::IndexTree(IndexServer* server, std::string_view filename,
-                     size_t cache_size)
+                     size_t cache_size, bool bitmap_only)
     : server(server), page_cache(std::make_unique<bptree::HeapPageCache>(
                           filename, true, cache_size)),
-      cow_tree(page_cache.get())
+      cow_tree(page_cache.get()), bitmap_only(bitmap_only)
 {
     postings_per_page = (page_cache->get_page_size() - BITMAP_PAGE_OFFSET) << 3;
 }
@@ -803,6 +803,8 @@ IndexTree::TreePageType
 IndexTree::choose_page_type(const std::string& tag_name,
                             const std::vector<LabeledPostings>& entry)
 {
+    if (bitmap_only) return TreePageType::BITMAP;
+
     size_t page_size = page_cache->get_page_size();
     size_t n_vals = entry.size();
     size_t bitmap_size = n_vals * page_size;

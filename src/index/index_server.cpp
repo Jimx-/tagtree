@@ -11,8 +11,9 @@ using promql::MatchOp;
 namespace tagtree {
 
 IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
-                         AbstractSeriesManager* sm)
-    : index_tree(this, std::string(index_dir) + "/index.db", cache_size),
+                         AbstractSeriesManager* sm, bool bitmap_only)
+    : index_tree(this, std::string(index_dir) + "/index.db", cache_size,
+                 bitmap_only),
       wal(std::string(index_dir) + "/wal")
 {
     series_manager = sm;

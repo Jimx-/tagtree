@@ -16,7 +16,7 @@ namespace tagtree {
 class IndexServer {
 public:
     IndexServer(std::string_view index_dir, size_t cache_size,
-                AbstractSeriesManager* sm);
+                AbstractSeriesManager* sm, bool bitmap_only = false);
 
     AbstractSeriesManager* get_series_manager() const { return series_manager; }
 
