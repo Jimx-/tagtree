@@ -24,11 +24,19 @@ IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
     replay_wal();
 }
 
-TSID IndexServer::add_series(uint64_t t,
-                             const std::vector<promql::Label>& labels)
+std::pair<TSID, bool>
+IndexServer::add_series(uint64_t t, const std::vector<promql::Label>& labels)
 {
     TSID new_id;
     bool ok;
+
+    MemPostingList tsids;
+    exists(labels, tsids, true);
+    assert(tsids.cardinality() <= 1);
+
+    if (tsids.cardinality()) {
+        return std::make_pair(*tsids.begin(), false);
+    }
 
     do {
         new_id = get_tsid();
@@ -37,13 +45,13 @@ TSID IndexServer::add_series(uint64_t t,
         ok = mem_index.add(labels, inserted_id, t);
 
         if (inserted_id != new_id) {
-            return inserted_id;
+            return std::make_pair(inserted_id, false);
         }
     } while (!ok);
 
     series_manager->add(new_id, labels);
 
-    return new_id;
+    return std::make_pair(new_id, true);
 }
 
 void IndexServer::exists(const std::vector<promql::Label>& labels,

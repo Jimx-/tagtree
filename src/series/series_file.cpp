@@ -172,9 +172,12 @@ void SeriesFile::open(bool create)
             throw std::runtime_error("series file corrupted(bad header)");
         }
 
+        printf("zero padding segment %s\n", filename.c_str());
         std::vector<char> zero_pad(PAGE_SIZE - (page_offset % PAGE_SIZE), 0);
-        lseek(fd, 0, SEEK_END);
-        write(fd, &zero_pad[0], zero_pad.size());
+        off_t ret = lseek(fd, 0, SEEK_END);
+        assert(ret == page_offset);
+        int n = write(fd, &zero_pad[0], zero_pad.size());
+        assert(n == zero_pad.size());
 
         page_offset += zero_pad.size();
     }

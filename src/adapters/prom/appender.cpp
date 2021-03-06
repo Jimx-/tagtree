@@ -15,20 +15,9 @@ void PromAppender::add(const std::vector<promql::Label>& labels, uint64_t t,
                        double v)
 {
 
-    MemPostingList tsids;
-    parent->get_index()->exists(labels, tsids, true);
+    auto [tsid, inserted] = parent->get_index()->add_series(t, labels);
 
-    if (tsids.cardinality() > 1) {
-        throw std::runtime_error("series is not unique");
-    }
-
-    TSID tsid;
-    if (!tsids.cardinality()) {
-        tsid = parent->get_index()->add_series(t, labels);
-        series.emplace_back(tsid, labels, t);
-    } else {
-        tsid = *tsids.begin();
-    }
+    if (inserted) series.emplace_back(tsid, labels, t);
 
     app->add(tsid, t, v);
 }

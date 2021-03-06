@@ -29,7 +29,8 @@ public:
 
     bool get_labels(TSID tsid, std::vector<promql::Label>& labels);
 
-    TSID add_series(uint64_t t, const std::vector<promql::Label>& labels);
+    std::pair<TSID, bool> add_series(uint64_t t,
+                                     const std::vector<promql::Label>& labels);
 
     void label_values(const std::string& label_name,
                       std::unordered_set<std::string>& values);
