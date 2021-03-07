@@ -35,7 +35,9 @@ IndexServer::add_series(uint64_t t, const std::vector<promql::Label>& labels)
     assert(tsids.cardinality() <= 1);
 
     if (tsids.cardinality()) {
-        return std::make_pair(*tsids.begin(), false);
+        auto tsid = *tsids.begin();
+        mem_index.touch(labels, tsid, t);
+        return std::make_pair(tsid, false);
     }
 
     do {

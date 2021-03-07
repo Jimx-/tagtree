@@ -37,6 +37,8 @@ public:
 
     bool add(const std::vector<promql::Label>& labels, TSID tsid,
              uint64_t timestamp);
+    void touch(const std::vector<promql::Label>& labels, TSID tsid,
+               uint64_t timestamp);
 
     void
     resolve_label_matchers(const std::vector<promql::LabelMatcher>& matchers,

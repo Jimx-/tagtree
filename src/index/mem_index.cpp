@@ -41,6 +41,16 @@ bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid,
     return true;
 }
 
+void MemIndex::touch(const std::vector<promql::Label>& labels, TSID tsid,
+                     uint64_t timestamp)
+{
+    std::unique_lock<std::shared_mutex> lock(mutex);
+
+    for (auto&& p : labels) {
+        add_label(p, tsid, timestamp);
+    }
+}
+
 void MemIndex::set_low_watermark(TSID wm, bool force)
 {
     std::unique_lock<std::shared_mutex> lock(mutex);
