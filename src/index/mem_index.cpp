@@ -44,6 +44,20 @@ bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid,
 void MemIndex::touch(const std::vector<promql::Label>& labels, TSID tsid,
                      uint64_t timestamp)
 {
+    assert(!labels.empty());
+    {
+        std::shared_lock<std::shared_mutex> lock(mutex);
+        const auto& p = labels.front();
+        auto name_it = map.find(p.name);
+        if (name_it == map.end()) goto add;
+        auto& value_map = name_it->second;
+        auto value_it = value_map.find(p.value);
+        if (value_it == value_map.end()) goto add;
+
+        if (value_it->second.bitmap.contains(tsid)) return;
+    }
+
+add:
     std::unique_lock<std::shared_mutex> lock(mutex);
 
     for (auto&& p : labels) {
