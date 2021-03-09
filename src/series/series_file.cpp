@@ -172,7 +172,6 @@ void SeriesFile::open(bool create)
             throw std::runtime_error("series file corrupted(bad header)");
         }
 
-        printf("zero padding segment %s\n", filename.c_str());
         std::vector<char> zero_pad(PAGE_SIZE - (page_offset % PAGE_SIZE), 0);
         off_t ret = lseek(fd, 0, SEEK_END);
         assert(ret == page_offset);
@@ -254,7 +253,8 @@ void SeriesFile::flush()
 
     if (write_pages.empty()) return;
 
-    int err = ftruncate(fd, write_pages.crbegin()->first + PAGE_SIZE);
+    auto new_page_offset = write_pages.crbegin()->first + PAGE_SIZE;
+    int err = ftruncate(fd, new_page_offset);
     if (err != 0) {
         fd = -1;
         throw std::runtime_error("unable to resize series file");
@@ -276,6 +276,8 @@ void SeriesFile::flush()
     fsync(fd);
 
     last_page = nullptr;
+    page_offset = new_page_offset;
+    assert(!(page_offset % PAGE_SIZE));
 
     for (auto&& p : write_pages) {
         page_cache[p.first] = std::move(p.second);
@@ -285,3 +287,4 @@ void SeriesFile::flush()
 }
 
 } // namespace tagtree
+

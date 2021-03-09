@@ -32,7 +32,7 @@ IndexServer::add_series(uint64_t t, const std::vector<promql::Label>& labels)
 
     MemPostingList tsids;
     exists(labels, tsids, true);
-    assert(tsids.cardinality() <= 1);
+    // assert(tsids.cardinality() <= 1);
 
     if (tsids.cardinality()) {
         auto tsid = *tsids.begin();

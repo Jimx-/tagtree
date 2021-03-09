@@ -1,3 +1,5 @@
+#undef NDEBUG
+
 #include "tagtree/index/index_tree.h"
 #include "bptree/heap_page_cache.h"
 #include "bptree/mem_page_cache.h"
@@ -209,6 +211,7 @@ void IndexTree::query_postings(
 
         auto page_id = it->second;
         boost::upgrade_lock<bptree::Page> lock;
+        assert(page_id != bptree::Page::INVALID_PAGE_ID);
         auto page = page_cache->fetch_page(page_id, lock);
         const uint8_t* p = page->get_buffer(lock);
 
@@ -263,7 +266,8 @@ void IndexTree::query_postings_sorted_list(
     SymbolTable::Ref value_ref = 0;
     auto* sm = server->get_series_manager();
 
-    if (matcher.op == promql::MatchOp::EQL)
+    if (matcher.op == promql::MatchOp::EQL ||
+        matcher.op == promql::MatchOp::NEQ)
         value_ref = sm->add_symbol(matcher.value);
 
     start_key = make_key(matcher.name, "", 0, UINT32_MAX);
@@ -284,6 +288,7 @@ void IndexTree::query_postings_sorted_list(
 
         auto page_id = it->second;
         boost::upgrade_lock<bptree::Page> lock;
+        assert(page_id != bptree::Page::INVALID_PAGE_ID);
         auto page = page_cache->fetch_page(page_id, lock);
         const uint8_t* p = page->get_buffer(lock);
 
@@ -436,6 +441,7 @@ void IndexTree::label_values(const std::string& label_name,
 
         auto page_id = it->second;
         boost::upgrade_lock<bptree::Page> lock;
+        assert(page_id != bptree::Page::INVALID_PAGE_ID);
         auto page = page_cache->fetch_page(page_id, lock);
         const uint8_t* p = page->get_buffer(lock);
 
@@ -521,6 +527,7 @@ bool IndexTree::get_sorted_list_initial_segment(
         if (start_key != name_timestamp_part) break;
 
         boost::upgrade_lock<bptree::Page> plock;
+        assert(it->second != bptree::Page::INVALID_PAGE_ID);
         auto page = page_cache->fetch_page(it->second, plock);
         assert(page != nullptr);
 
@@ -709,6 +716,7 @@ void IndexTree::write_postings(TSID limit, MemIndexSnapshot& snapshot)
     cow_tree.get_write_tree(txn);
 
     for (auto&& entry : tree_entries) {
+        assert(entry.pid != bptree::Page::INVALID_PAGE_ID);
         if (entry.updated) {
             cow_tree.update(entry.key, entry.pid, txn);
         } else {
@@ -716,8 +724,8 @@ void IndexTree::write_postings(TSID limit, MemIndexSnapshot& snapshot)
         }
     }
 
-    page_cache->flush_all_pages();
     cow_tree.commit(txn);
+    page_cache->flush_all_pages();
 }
 
 bptree::PageID IndexTree::write_posting_page(
@@ -743,6 +751,7 @@ bptree::PageID IndexTree::write_posting_page(
     if (!posting_page) {
         for (auto&& pid : posting_page_ids) {
             boost::upgrade_lock<bptree::Page> plock;
+            assert(pid != bptree::Page::INVALID_PAGE_ID);
             auto page = page_cache->fetch_page(pid, plock);
             assert(page != nullptr);
 
