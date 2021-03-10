@@ -134,12 +134,17 @@ public:
 
     BaseNodeType* get_child(int idx)
     {
-        if (child_cache[idx]) {
-            /* child in cache */
-            return child_cache[idx].get();
+        {
+            std::shared_lock<std::shared_mutex> guard(child_cache_mutex);
+            if (child_cache[idx]) {
+                /* child in cache */
+                return child_cache[idx].get();
+            }
         }
 
         if (child_pages[idx] != bptree::Page::INVALID_PAGE_ID) {
+            std::unique_lock<std::shared_mutex> guard(child_cache_mutex);
+
             if (!child_cache[idx]) {
                 child_cache[idx] = tree->read_node(this, child_pages[idx]);
             }
@@ -290,6 +295,7 @@ private:
     std::array<K, N> keys;
     std::array<bptree::PageID, N + 1> child_pages;
     std::array<std::shared_ptr<BaseNodeType>, N + 1> child_cache;
+    std::shared_mutex child_cache_mutex;
     KeySerializer key_serializer;
 };
 
