@@ -29,6 +29,18 @@ namespace tagtree {
 
 class IndexServer;
 
+struct TreeValue {
+    SymbolTable::Ref value_ref;
+    bptree::PageID page_id;
+
+    explicit TreeValue() : value_ref(0), page_id(bptree::Page::INVALID_PAGE_ID)
+    {}
+    TreeValue(SymbolTable::Ref value_ref, bptree::PageID page_id)
+        : value_ref(value_ref), page_id(page_id)
+    {}
+};
+static_assert(sizeof(TreeValue) == 8, "TreeValue has wrong size");
+
 class IndexTree {
 public:
     IndexTree(IndexServer* server, std::string_view filename, size_t cache_size,
@@ -53,15 +65,17 @@ private:
         2 * sizeof(SymbolTable::Ref) + sizeof(uint64_t);
 
     using KeyType = TupleKey<NAME_BYTES, VALUE_BYTES>;
-    using COWTreeType = tagtree::COWTree<100, KeyType, bptree::PageID>;
+    using COWTreeType = tagtree::COWTree<100, KeyType, TreeValue>;
 
     struct TreeEntry {
         IndexTree::KeyType key;
+        SymbolTable::Ref value_ref;
         bptree::PageID pid;
         bool updated;
 
-        TreeEntry(IndexTree::KeyType key, bptree::PageID pid, bool updated)
-            : key(key), pid(pid), updated(updated)
+        TreeEntry(IndexTree::KeyType key, SymbolTable::Ref value_ref,
+                  bptree::PageID pid, bool updated)
+            : key(key), value_ref(value_ref), pid(pid), updated(updated)
         {}
     };
 
