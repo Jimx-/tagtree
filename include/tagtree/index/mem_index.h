@@ -55,6 +55,12 @@ private:
     MemMapType map;
     std::shared_mutex mutex;
 
+    struct __Inner {
+        MemMapType __map;
+        std::shared_mutex __mutex;
+    };
+    char __padding[-sizeof(__Inner) & 63];
+
     void get_matcher_postings(const promql::LabelMatcher& matcher,
                               MemPostingList& tsids);
 };
