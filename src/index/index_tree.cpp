@@ -98,7 +98,8 @@ void IndexTree::query_postings(
     auto op = matcher.op;
     auto name = matcher.name;
     auto value = matcher.value;
-    SymbolTable::Ref value_ref;
+    SymbolTable::Ref value_ref, last_value_ref = 0;
+    bool last_value_matched = false;
 
     auto* sm = server->get_series_manager();
     if (matcher.op == promql::MatchOp::NEQ)
@@ -224,6 +225,22 @@ void IndexTree::query_postings(
         if (matcher.op == MatchOp::NEQ && it->second.value_ref == value_ref) {
             it++;
             continue;
+        }
+
+        if ((matcher.op == MatchOp::EQL_REGEX ||
+             matcher.op == MatchOp::NEQ_REGEX) &&
+            it->second.value_ref != 0) {
+            if (it->second.value_ref != last_value_ref) {
+                auto value_str = sm->get_symbol(it->second.value_ref);
+
+                last_value_ref = it->second.value_ref;
+                last_value_matched = matcher.match_value(value_str);
+            }
+
+            if (!last_value_matched) {
+                it++;
+                continue;
+            }
         }
 
         auto page_id = it->second.page_id;
