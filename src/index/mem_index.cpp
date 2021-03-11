@@ -1,12 +1,47 @@
 #include "tagtree/index/mem_index.h"
 
+#include "xxhash.h"
+
 #include <iostream>
 
 namespace tagtree {
 
+void MemStripe::add(const promql::Label& label, TSID tsid, uint64_t timestamp,
+                    bool set_next)
+{
+    std::unique_lock<std::shared_mutex> lock(mutex);
+
+    map[label.name][label.value].add(tsid, timestamp, set_next);
+}
+
+void MemStripe::get_matcher_postings(const promql::LabelMatcher& matcher,
+                                     MemPostingList& tsids)
+{
+    tsids = {};
+
+    auto name_it = map.find(matcher.name);
+    if (name_it == map.end()) {
+        return;
+    }
+
+    auto& value_map = name_it->second;
+    for (auto&& p : value_map) {
+        if (!matcher.match_value(p.first)) continue;
+
+        tsids |= p.second.bitmap;
+    }
+}
+
 MemIndex::MemIndex(size_t capacity) : low_watermark(0), current_limit(NO_LIMIT)
 {
-    map.reserve(capacity);
+    // map.reserve(capacity);
+}
+
+MemStripe& MemIndex::get_stripe(const promql::Label& label)
+{
+    auto& name = label.name;
+    auto hash = XXH64(name.c_str(), name.length(), 0);
+    return stripes[hash & STRIPE_MASK];
 }
 
 bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid,
@@ -18,7 +53,7 @@ bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid,
     }
 
     {
-        std::unique_lock<std::shared_mutex> lock(mutex);
+        std::shared_lock<std::shared_mutex> lock(mutex);
 
         if (tsid <= low_watermark) {
             return false;
@@ -33,35 +68,38 @@ bool MemIndex::add(const std::vector<promql::Label>& labels, TSID tsid,
             return true;
         }
 
-        for (auto&& p : labels) {
-            add_label(p, tsid, timestamp);
+        bool set_next = current_limit != NO_LIMIT && tsid > current_limit;
+
+        for (auto&& label : labels) {
+            get_stripe(label).add(label, tsid, timestamp, set_next);
         }
     }
 
     return true;
 }
 
+bool MemStripe::contains(const promql::Label& label, TSID tsid)
+{
+    std::shared_lock<std::shared_mutex> lock(mutex);
+    auto name_it = map.find(label.name);
+    if (name_it == map.end()) return false;
+    auto& value_map = name_it->second;
+    auto value_it = value_map.find(label.value);
+    if (value_it == value_map.end()) return false;
+
+    return value_it->second.bitmap.contains(tsid);
+}
+
 void MemIndex::touch(const std::vector<promql::Label>& labels, TSID tsid,
                      uint64_t timestamp)
 {
     assert(!labels.empty());
-    {
-        std::shared_lock<std::shared_mutex> lock(mutex);
-        const auto& p = labels.front();
-        auto name_it = map.find(p.name);
-        if (name_it == map.end()) goto add;
-        auto& value_map = name_it->second;
-        auto value_it = value_map.find(p.value);
-        if (value_it == value_map.end()) goto add;
+    std::shared_lock<std::shared_mutex> lock(mutex);
 
-        if (value_it->second.bitmap.contains(tsid)) return;
-    }
-
-add:
-    std::unique_lock<std::shared_mutex> lock(mutex);
+    if (get_stripe(labels.front()).contains(labels.front(), tsid)) return;
 
     for (auto&& p : labels) {
-        add_label(p, tsid, timestamp);
+        get_stripe(p).add(p, tsid, timestamp, false);
     }
 }
 
@@ -94,66 +132,15 @@ void MemIndex::resolve_label_matchers_unsafe(
     }
 
     for (auto&& p : matchers) {
-        if (p.op == promql::MatchOp::EQL) {
-            auto name_it = map.find(p.name);
-            if (name_it == map.end()) {
-                tsids = MemPostingList{};
-                return;
-            }
+        promql::Label label{p.name, p.value};
+        auto& stripe = get_stripe(label);
 
-            auto& value_map = name_it->second;
-            auto value_it = value_map.find(p.value);
-            if (value_it == value_map.end()) {
-                tsids = MemPostingList{};
-                return;
-            }
+        stripe.resolve_label_matcher(
+            p, tsids, positive_matchers ? &exclude : nullptr, first);
 
-            if (first) {
-                tsids = value_it->second.bitmap;
-            } else {
-                tsids &= value_it->second.bitmap;
-            }
+        if (tsids.isEmpty()) return;
 
-            if (tsids.isEmpty()) return;
-
-            first = false;
-        } else if (p.op == promql::MatchOp::NEQ) {
-            auto name_it = map.find(p.name);
-            if (name_it == map.end()) {
-                continue;
-            }
-
-            auto& value_map = name_it->second;
-
-            if (!positive_matchers) {
-                for (auto&& val : value_map) {
-                    if (val.first != p.value) {
-                        tsids |= val.second.bitmap;
-                    }
-                }
-            } else {
-                auto value_it = value_map.find(p.value);
-                if (value_it == value_map.end()) {
-                    continue;
-                }
-
-                exclude |= value_it->second.bitmap;
-            }
-        } else {
-            MemPostingList postings;
-
-            get_matcher_postings(p, postings);
-
-            if (first) {
-                tsids = std::move(postings);
-            } else {
-                tsids &= postings;
-            }
-
-            if (tsids.isEmpty()) return;
-
-            first = false;
-        }
+        if (p.op != promql::MatchOp::NEQ) first = false;
     }
 
     if (!exclude.isEmpty()) {
@@ -161,26 +148,75 @@ void MemIndex::resolve_label_matchers_unsafe(
     }
 }
 
-void MemIndex::get_matcher_postings(const promql::LabelMatcher& matcher,
-                                    MemPostingList& tsids)
+void MemStripe::resolve_label_matcher(const promql::LabelMatcher& matcher,
+                                      MemPostingList& tsids,
+                                      MemPostingList* exclude, bool first)
 {
-    tsids = {};
+    std::shared_lock<std::shared_mutex> lock(mutex);
 
-    auto name_it = map.find(matcher.name);
-    if (name_it == map.end()) {
-        return;
-    }
+    if (matcher.op == promql::MatchOp::EQL) {
+        auto name_it = map.find(matcher.name);
+        if (name_it == map.end()) {
+            tsids = MemPostingList{};
+            return;
+        }
 
-    auto& value_map = name_it->second;
-    for (auto&& p : value_map) {
-        if (!matcher.match_value(p.first)) continue;
+        auto& value_map = name_it->second;
+        auto value_it = value_map.find(matcher.value);
+        if (value_it == value_map.end()) {
+            tsids = MemPostingList{};
+            return;
+        }
 
-        tsids |= p.second.bitmap;
+        if (first) {
+            tsids = value_it->second.bitmap;
+        } else {
+            tsids &= value_it->second.bitmap;
+        }
+    } else if (matcher.op == promql::MatchOp::NEQ) {
+        auto name_it = map.find(matcher.name);
+        if (name_it == map.end()) {
+            return;
+        }
+
+        auto& value_map = name_it->second;
+
+        if (!exclude) {
+            for (auto&& val : value_map) {
+                if (val.first != matcher.value) {
+                    tsids |= val.second.bitmap;
+                }
+            }
+        } else {
+            auto value_it = value_map.find(matcher.value);
+            if (value_it == value_map.end()) {
+                return;
+            }
+
+            *exclude |= value_it->second.bitmap;
+        }
+    } else {
+        MemPostingList postings;
+
+        get_matcher_postings(matcher, postings);
+
+        if (first) {
+            tsids = std::move(postings);
+        } else {
+            tsids &= postings;
+        }
     }
 }
 
 void MemIndex::label_values(const std::string& label_name,
                             std::unordered_set<std::string>& values)
+{
+    promql::Label label{label_name, ""};
+    get_stripe(label).label_values(label_name, values);
+}
+
+void MemStripe::label_values(const std::string& label_name,
+                             std::unordered_set<std::string>& values)
 {
     std::shared_lock<std::shared_mutex> lock(mutex);
 
@@ -194,9 +230,17 @@ void MemIndex::label_values(const std::string& label_name,
 
 void MemIndex::snapshot(TSID limit, MemIndexSnapshot& snapshot)
 {
-    std::shared_lock<std::shared_mutex> lock(mutex);
-
     snapshot.clear();
+
+    for (auto& stripe : stripes)
+        stripe.snapshot(limit, snapshot);
+
+    current_limit = NO_LIMIT;
+}
+
+void MemStripe::snapshot(TSID limit, MemIndexSnapshot& snapshot)
+{
+    std::shared_lock<std::shared_mutex> lock(mutex);
 
     for (auto&& name : map) {
         std::vector<LabeledPostings> entries;
@@ -217,20 +261,19 @@ void MemIndex::snapshot(TSID limit, MemIndexSnapshot& snapshot)
 
         snapshot[name.first] = entries;
     }
-
-    current_limit = NO_LIMIT;
-}
-
-void MemIndex::add_label(const promql::Label& label, TSID tsid,
-                         uint64_t timestamp)
-{
-    bool set_next = current_limit != NO_LIMIT && tsid > current_limit;
-    map[label.name][label.value].add(tsid, timestamp, set_next);
 }
 
 void MemIndex::gc()
 {
     /* clear postings up to low watermark */
+    std::shared_lock<std::shared_mutex> lock(mutex);
+
+    for (auto&& stripe : stripes)
+        stripe.gc(low_watermark);
+}
+
+void MemStripe::gc(TSID low_watermark)
+{
     std::unique_lock<std::shared_mutex> lock(mutex);
 
     for (auto name_it = map.begin(); name_it != map.end();) {

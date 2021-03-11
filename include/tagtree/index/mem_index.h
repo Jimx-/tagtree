@@ -31,6 +31,34 @@ struct LabeledPostings {
 using MemIndexSnapshot =
     std::unordered_map<std::string, std::vector<LabeledPostings>>;
 
+class MemStripe {
+public:
+    void add(const promql::Label& label, TSID tsid, uint64_t timestamp,
+             bool set_next);
+    void touch(const promql::Label& label, TSID tsid, uint64_t timestamp);
+    bool contains(const promql::Label& label, TSID tsid);
+
+    void resolve_label_matcher(const promql::LabelMatcher& matcher,
+                               MemPostingList& tsids, MemPostingList* exclude,
+                               bool first);
+    void label_values(const std::string& label_name,
+                      std::unordered_set<std::string>& values);
+
+    void snapshot(TSID limit, MemIndexSnapshot& snapshot);
+    void gc(TSID low_watermark);
+
+private:
+    using MemMapType =
+        std::unordered_map<std::string,
+                           std::unordered_map<std::string, MemPostings>>;
+
+    MemMapType map;
+    std::shared_mutex mutex;
+
+    void get_matcher_postings(const promql::LabelMatcher& matcher,
+                              MemPostingList& tsids);
+};
+
 class MemIndex {
 public:
     MemIndex(size_t capacity = 512);
@@ -53,16 +81,17 @@ public:
     void gc();
 
 private:
-    using MemMapType =
-        std::unordered_map<std::string,
-                           std::unordered_map<std::string, MemPostings>>;
+    static const size_t NUM_STRIPES = 32;
+    static const size_t STRIPE_MASK = NUM_STRIPES - 1;
+    std::array<MemStripe, NUM_STRIPES> stripes;
 
-    MemMapType map;
     std::shared_mutex mutex;
     TSID low_watermark;
 
     static const TSID NO_LIMIT = UINT64_MAX;
     TSID current_limit;
+
+    MemStripe& get_stripe(const promql::Label& label);
 
     void add_label(const promql::Label& label, TSID tsid, uint64_t timestamp);
 
