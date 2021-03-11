@@ -35,6 +35,38 @@ struct RefSeriesEntry {
     std::vector<std::pair<SymbolTable::Ref, SymbolTable::Ref>> labels;
 };
 
+class SeriesStripe {
+public:
+    void add(uint64_t hash, SeriesEntry* entry)
+    {
+        std::unique_lock<std::shared_mutex> guard(mutex);
+        series_hash_map[hash] = entry;
+    }
+    SeriesEntry* get(uint64_t hash)
+    {
+        std::shared_lock<std::shared_mutex> guard(mutex);
+        auto it = series_hash_map.find(hash);
+        if (it == series_hash_map.end()) return nullptr;
+        it->second->lock();
+        return it->second;
+    }
+    void erase(uint64_t hash)
+    {
+        std::unique_lock<std::shared_mutex> guard(mutex);
+        series_hash_map.erase(hash);
+    }
+
+private:
+    std::unordered_map<uint64_t, SeriesEntry*> series_hash_map;
+    std::shared_mutex mutex;
+
+    struct __Inner {
+        std::unordered_map<uint64_t, SeriesEntry*> __map;
+        std::shared_mutex __mutex;
+    };
+    char __padding[-sizeof(__Inner) & 63];
+};
+
 class AbstractSeriesManager {
 public:
     AbstractSeriesManager(size_t cache_size, std::string_view series_dir);
@@ -70,7 +102,15 @@ private:
         std::list<std::pair<TSID, std::unique_ptr<SeriesEntry>>>;
     LRUListType lru_list;
     std::unordered_map<TSID, LRUListType::iterator> series_map;
-    std::unordered_map<uint64_t, SeriesEntry*> series_hash_map;
+
+    static const size_t NUM_STRIPES = 16;
+    static const size_t STRIPE_MASK = NUM_STRIPES - 1;
+    std::array<SeriesStripe, NUM_STRIPES> stripes;
+
+    inline SeriesStripe& get_stripe(uint64_t hash)
+    {
+        return stripes[hash & STRIPE_MASK];
+    }
 
     std::unique_ptr<SeriesEntry> get_entry();
 
