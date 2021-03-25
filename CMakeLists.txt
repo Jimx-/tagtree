@@ -39,6 +39,7 @@ set(SOURCE_FILES
     ${TOPDIR}/src/series/series_file_manager.cpp
     ${TOPDIR}/src/series/series_manager.cpp
     ${TOPDIR}/src/series/symbol_table.cpp
+    ${TOPDIR}/src/swig/wrapper.cpp    
     ${TOPDIR}/src/tree/item_page_view.cpp
     ${TOPDIR}/src/tree/sorted_list_page_view.cpp
     ${TOPDIR}/src/wal/record_serializer.cpp
@@ -83,3 +84,17 @@ add_library(tagtree STATIC ${SOURCE_FILES} ${HEADER_FILES} ${EXT_SOURCE_FILES})
 target_link_libraries(tagtree ${LIBRARIES})
 target_include_directories(tagtree PUBLIC ${INCLUDE_DIRS})
 install(TARGETS tagtree DESTINATION lib)
+
+find_package(SWIG 4.0 COMPONENTS go)
+include(UseSWIG)
+set (UseSWIG_TARGET_NAME_PREFERENCE STANDARD)
+set_property(SOURCE ${TOPDIR}/src/swig/tagtree.i PROPERTY CPLUSPLUS ON)
+swig_add_library(tagtreego LANGUAGE go SOURCES ${TOPDIR}/src/swig/tagtree.i)
+set_property(TARGET tagtreego PROPERTY SWIG_COMPILE_OPTIONS -intgosize 64 -cgo)
+set_target_properties(tagtreego PROPERTIES PREFIX "lib")
+
+add_custom_command(TARGET tagtreego
+                   POST_BUILD
+                   COMMAND sed -i 's/\#undef intgo/\#undef intgo\\n\#cgo LDFLAGS: -L$$\\{SRCDIR\\} -ltagtreego -ltagtree -lstdc++ -lboost_thread -lpromql -lbptree/g' tagtree.go
+                   DEPENDS ${CMAKE_BINARY_DIR}/tagtree/tagtree.go
+                   )

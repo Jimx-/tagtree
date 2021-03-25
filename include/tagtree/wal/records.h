@@ -16,6 +16,8 @@ struct SeriesRef {
     std::vector<promql::Label> labels;
     uint64_t timestamp;
 
+    SeriesRef() {}
+
     SeriesRef(TSID tsid, const std::vector<promql::Label> labels, uint64_t t)
         : tsid(tsid), labels(labels), timestamp(t)
     {}
