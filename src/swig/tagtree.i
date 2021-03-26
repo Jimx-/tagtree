@@ -20,4 +20,4 @@
 %template(VecTSID) std::vector<unsigned long>;
 
 %template(StringPair) std::pair<std::string, std::string>;
-%template(SeriedRefBoolPair) std::pair<tagtree::SeriesRef, bool>;
+%template(SeriesRefBoolPair) std::pair<tagtree::SeriesRef, bool>;
