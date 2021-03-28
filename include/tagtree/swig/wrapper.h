@@ -14,14 +14,14 @@ public:
                        tagtree::AbstractSeriesManager* sm);
 
     std::pair<tagtree::SeriesRef, bool>
-    AddSeries(unsigned long t, const std::vector<promql::Label>& labels);
+    AddSeries(long t, const std::vector<promql::Label>& labels);
 
     void CommitBatch(const std::vector<tagtree::SeriesRef>& refs);
 
     void SeriesLabels(unsigned long tsid, std::vector<promql::Label>& labels);
 
     void ResolveLabelMatchers(const std::vector<promql::LabelMatcher>& matchers,
-                              unsigned long mint, unsigned long maxt,
+                              long mint, long maxt,
                               std::vector<unsigned long>& tsids);
 
 private:

@@ -24,8 +24,7 @@ IndexServerWrapper* CreateIndexServer(const std::string& dir, size_t cache_size,
 }
 
 std::pair<SeriesRef, bool>
-IndexServerWrapper::AddSeries(unsigned long t,
-                              const std::vector<promql::Label>& labels)
+IndexServerWrapper::AddSeries(long t, const std::vector<promql::Label>& labels)
 {
     auto p = server.add_series(t, labels);
 
@@ -44,8 +43,8 @@ void IndexServerWrapper::SeriesLabels(unsigned long tsid,
 }
 
 void IndexServerWrapper::ResolveLabelMatchers(
-    const std::vector<promql::LabelMatcher>& matchers, unsigned long mint,
-    unsigned long maxt, std::vector<unsigned long>& tsids)
+    const std::vector<promql::LabelMatcher>& matchers, long mint, long maxt,
+    std::vector<unsigned long>& tsids)
 {
     MemPostingList bitmap;
 

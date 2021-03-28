@@ -21,6 +21,8 @@ struct SeriesRef {
     SeriesRef(TSID tsid, const std::vector<promql::Label> labels, uint64_t t)
         : tsid(tsid), labels(labels), timestamp(t)
     {}
+
+    unsigned long raw_tsid() const { return (unsigned long)tsid; }
 };
 
 } // namespace tagtree
