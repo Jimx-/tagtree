@@ -35,7 +35,7 @@ class MemStripe {
 public:
     void add(const promql::Label& label, TSID tsid, uint64_t timestamp,
              bool set_next);
-    void touch(const promql::Label& label, TSID tsid, uint64_t timestamp);
+    void touch(const promql::Label& label, uint64_t timestamp);
     bool contains(const promql::Label& label, TSID tsid);
 
     void resolve_label_matcher(const promql::LabelMatcher& matcher,

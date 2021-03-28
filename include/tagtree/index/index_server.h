@@ -16,7 +16,8 @@ namespace tagtree {
 class IndexServer {
 public:
     IndexServer(std::string_view index_dir, size_t cache_size,
-                AbstractSeriesManager* sm, bool bitmap_only = false);
+                AbstractSeriesManager* sm, bool bitmap_only = false,
+                bool full_cache = true);
 
     AbstractSeriesManager* get_series_manager() const { return series_manager; }
 
@@ -47,6 +48,7 @@ private:
     AbstractSeriesManager* series_manager;
     WAL wal;
     std::atomic<TSID> id_counter;
+    bool full_cache;
 
     std::mutex compaction_mutex;
     std::atomic<bool> compacting;

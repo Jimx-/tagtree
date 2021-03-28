@@ -11,10 +11,11 @@ using promql::MatchOp;
 namespace tagtree {
 
 IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
-                         AbstractSeriesManager* sm, bool bitmap_only)
+                         AbstractSeriesManager* sm, bool bitmap_only,
+                         bool full_cache)
     : index_tree(this, std::string(index_dir) + "/index.db", cache_size,
                  bitmap_only),
-      wal(std::string(index_dir) + "/wal")
+      wal(std::string(index_dir) + "/wal"), full_cache(full_cache)
 {
     series_manager = sm;
     id_counter.store(0);
@@ -31,7 +32,7 @@ IndexServer::add_series(uint64_t t, const std::vector<promql::Label>& labels)
     bool ok;
 
     MemPostingList tsids;
-    exists(labels, tsids, true);
+    exists(labels, tsids, full_cache);
     // assert(tsids.cardinality() <= 1);
 
     if (tsids.cardinality()) {
@@ -119,6 +120,8 @@ void IndexServer::resolve_label_matchers(
     index_tree.resolve_label_matchers(matchers, start, end, tree_postings);
 
     tsids = tree_postings | mem_postings;
+
+    tsids = mem_postings;
 
     if (tsids.cardinality() == 1) {
         // touch the series entry to load it into cache

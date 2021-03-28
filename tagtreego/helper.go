@@ -1,4 +1,4 @@
-package tagtree
+package tagtreego
 
 import (
 	"github.com/prometheus/prometheus/tsdb/labels"

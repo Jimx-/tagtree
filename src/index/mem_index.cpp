@@ -14,6 +14,18 @@ void MemStripe::add(const promql::Label& label, TSID tsid, uint64_t timestamp,
     map[label.name][label.value].add(tsid, timestamp, set_next);
 }
 
+void MemStripe::touch(const promql::Label& label, uint64_t timestamp)
+{
+    std::shared_lock<std::shared_mutex> lock(mutex);
+    auto name_it = map.find(label.name);
+    if (name_it == map.end()) return;
+    auto& value_map = name_it->second;
+    auto value_it = value_map.find(label.value);
+    if (value_it == value_map.end()) return;
+
+    return value_it->second.touch(timestamp);
+}
+
 void MemStripe::get_matcher_postings(const promql::LabelMatcher& matcher,
                                      MemPostingList& tsids)
 {
@@ -96,7 +108,12 @@ void MemIndex::touch(const std::vector<promql::Label>& labels, TSID tsid,
     assert(!labels.empty());
     std::shared_lock<std::shared_mutex> lock(mutex);
 
-    if (get_stripe(labels.front()).contains(labels.front(), tsid)) return;
+    if (get_stripe(labels.front()).contains(labels.front(), tsid)) {
+        for (auto&& p : labels) {
+            get_stripe(p).touch(p, timestamp);
+        }
+        return;
+    }
 
     for (auto&& p : labels) {
         get_stripe(p).add(p, tsid, timestamp, false);

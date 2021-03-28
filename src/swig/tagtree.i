@@ -1,4 +1,4 @@
-%module tagtree
+%module tagtreego
 
 %{
 #include "tagtree/swig/wrapper.h"

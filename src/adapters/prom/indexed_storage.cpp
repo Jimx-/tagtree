@@ -8,11 +8,11 @@ namespace prom {
 IndexedStorage::IndexedStorage(std::string_view index_dir, size_t cache_size,
                                tagtree::Storage* storage,
                                tagtree::AbstractSeriesManager* sm,
-                               bool bitmap_only)
+                               bool bitmap_only, bool full_cache)
     : storage(storage)
 {
-    index_server =
-        std::make_unique<IndexServer>(index_dir, cache_size, sm, bitmap_only);
+    index_server = std::make_unique<IndexServer>(index_dir, cache_size, sm,
+                                                 bitmap_only, full_cache);
 }
 
 std::shared_ptr<promql::Querier> IndexedStorage::querier(uint64_t mint,

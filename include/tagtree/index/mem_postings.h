@@ -5,13 +5,15 @@
 
 #include "roaring.hh"
 
+#include <atomic>
 #include <set>
 
 namespace tagtree {
 
 struct MemPostings {
     Roaring bitmap;
-    uint64_t min_timestamp, max_timestamp, next_timestamp;
+    uint64_t min_timestamp, next_timestamp;
+    std::atomic<uint64_t> max_timestamp;
 
     MemPostings()
         : min_timestamp(UINT64_MAX), max_timestamp(0),
@@ -27,7 +29,15 @@ struct MemPostings {
         else
             min_timestamp = std::min(min_timestamp, timestamp);
 
-        max_timestamp = std::max(max_timestamp, timestamp);
+        max_timestamp.store(std::max(max_timestamp.load(), timestamp));
+    }
+
+    void touch(uint64_t timestamp)
+    {
+        uint64_t prev_value = max_timestamp;
+        while (prev_value < timestamp &&
+               !max_timestamp.compare_exchange_weak(prev_value, timestamp)) {
+        }
     }
 };
 
