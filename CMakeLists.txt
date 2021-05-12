@@ -95,6 +95,6 @@ set_target_properties(tagtreego PROPERTIES PREFIX "lib")
 
 add_custom_command(TARGET tagtreego
                    POST_BUILD
-                   COMMAND sed -i 's/\#undef intgo/\#undef intgo\\n\#cgo LDFLAGS: -L$$\\{SRCDIR\\} -ltagtreego -ltagtree -lstdc++ -lboost_thread -lpromql -lbptree/g' tagtree.go
-                   DEPENDS ${CMAKE_BINARY_DIR}/tagtree/tagtree.go
+                   COMMAND sed -i 's/\#undef intgo/\#undef intgo\\n\#cgo LDFLAGS: -L$$\\{SRCDIR\\} -ltagtreego -ltagtree -lstdc++ -lboost_thread -lpromql -lbptree/g' tagtreego.go
+                   DEPENDS ${CMAKE_BINARY_DIR}/tagtree/tagtreego.go
                    )

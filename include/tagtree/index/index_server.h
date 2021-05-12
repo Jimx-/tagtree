@@ -13,11 +13,18 @@
 
 namespace tagtree {
 
+enum class CheckpointPolicy {
+    NORMAL,
+    DISABLED,
+    PRINT,
+};
+
 class IndexServer {
 public:
     IndexServer(std::string_view index_dir, size_t cache_size,
                 AbstractSeriesManager* sm, bool bitmap_only = false,
-                bool full_cache = true);
+                bool full_cache = true,
+                CheckpointPolicy checkpoint_policy = CheckpointPolicy::NORMAL);
 
     AbstractSeriesManager* get_series_manager() const { return series_manager; }
 
@@ -49,10 +56,12 @@ private:
     WAL wal;
     std::atomic<TSID> id_counter;
     bool full_cache;
+    CheckpointPolicy checkpoint_policy;
 
     std::mutex compaction_mutex;
     std::atomic<bool> compacting;
     TSID last_compaction_wm;
+    uint64_t last_compaction_timestamp;
 
     inline TSID get_tsid() { return id_counter.fetch_add(1); }
 

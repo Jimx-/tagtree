@@ -44,7 +44,7 @@ public:
     void label_values(const std::string& label_name,
                       std::unordered_set<std::string>& values);
 
-    void snapshot(TSID limit, MemIndexSnapshot& snapshot);
+    uint64_t snapshot(TSID limit, MemIndexSnapshot& snapshot);
     void gc(TSID low_watermark);
 
 private:
@@ -82,7 +82,7 @@ public:
                       std::unordered_set<std::string>& values);
 
     void set_low_watermark(TSID wm, bool force = false);
-    void snapshot(TSID limit, MemIndexSnapshot& snapshot);
+    uint64_t snapshot(TSID limit, MemIndexSnapshot& snapshot);
 
     void gc();
 

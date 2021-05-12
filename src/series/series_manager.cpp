@@ -105,6 +105,21 @@ SeriesEntry* AbstractSeriesManager::get(TSID tsid)
     return entry;
 }
 
+bool AbstractSeriesManager::get_label_set(TSID tsid,
+                                          std::vector<promql::Label>& lset)
+{
+    std::shared_lock<std::shared_mutex> lock(mutex);
+
+    auto it = series_map.find(tsid);
+    if (it == series_map.end()) return false;
+
+    auto* entry = it->second->second.get();
+    std::copy(entry->labels.begin(), entry->labels.end(),
+              std::back_inserter(lset));
+
+    return true;
+}
+
 SeriesEntry*
 AbstractSeriesManager::get_by_label_set(const std::vector<promql::Label>& lset)
 {

@@ -2,6 +2,7 @@
 #include "tagtree/series/series_manager.h"
 #include "tagtree/wal/record_serializer.h"
 
+#include <iostream>
 #include <sstream>
 #include <thread>
 #include <unordered_set>
@@ -12,10 +13,11 @@ namespace tagtree {
 
 IndexServer::IndexServer(std::string_view index_dir, size_t cache_size,
                          AbstractSeriesManager* sm, bool bitmap_only,
-                         bool full_cache)
+                         bool full_cache, CheckpointPolicy checkpoint_policy)
     : index_tree(this, std::string(index_dir) + "/index.db", cache_size,
                  bitmap_only),
-      wal(std::string(index_dir) + "/wal"), full_cache(full_cache)
+      wal(std::string(index_dir) + "/wal"), full_cache(full_cache),
+      last_compaction_timestamp(0), checkpoint_policy(checkpoint_policy)
 {
     series_manager = sm;
     id_counter.store(0);
@@ -117,11 +119,13 @@ void IndexServer::resolve_label_matchers(
     }
 
     mem_index.resolve_label_matchers(matchers, mem_postings);
-    index_tree.resolve_label_matchers(matchers, start, end, tree_postings);
 
-    tsids = tree_postings | mem_postings;
-
-    tsids = mem_postings;
+    if (last_compaction_timestamp >= start) {
+        index_tree.resolve_label_matchers(matchers, start, end, tree_postings);
+        tsids = tree_postings | mem_postings;
+    } else {
+        tsids = mem_postings;
+    }
 
     if (tsids.cardinality() == 1) {
         // touch the series entry to load it into cache
@@ -134,13 +138,7 @@ void IndexServer::resolve_label_matchers(
 
 bool IndexServer::get_labels(TSID tsid, std::vector<promql::Label>& labels)
 {
-    auto* entry = series_manager->get(tsid);
-    if (!entry) return false;
-    labels.clear();
-    std::copy(entry->labels.begin(), entry->labels.end(),
-              std::back_inserter(labels));
-    entry->unlock();
-    return true;
+    return series_manager->get_label_set(tsid, labels);
 }
 
 void IndexServer::label_values(const std::string& label_name,
@@ -193,7 +191,8 @@ void IndexServer::manual_compact() { try_compact(true, false); }
 
 bool IndexServer::compactable(TSID current_id)
 {
-    return (current_id >= last_compaction_wm + 50000);
+    return (checkpoint_policy != CheckpointPolicy::DISABLED) &&
+           (current_id >= last_compaction_wm + 50000);
 }
 
 void IndexServer::compact(TSID current_id)
@@ -201,10 +200,13 @@ void IndexServer::compact(TSID current_id)
     MemIndexSnapshot snapshot;
     size_t last_segment;
 
+    if (checkpoint_policy == CheckpointPolicy::PRINT)
+        std::cerr << id_counter.load() << ",b" << std::endl;
+
     last_segment = wal.close_segment();
 
     mem_index.set_low_watermark(current_id, true);
-    mem_index.snapshot(current_id, snapshot);
+    auto max_timestamp = mem_index.snapshot(current_id, snapshot);
 
     index_tree.write_postings(current_id, snapshot);
 
@@ -212,7 +214,12 @@ void IndexServer::compact(TSID current_id)
 
     mem_index.gc();
 
-    wal.write_checkpoint(current_id, last_segment);
+    wal.write_checkpoint(current_id, last_segment, max_timestamp);
+
+    last_compaction_timestamp = max_timestamp;
+
+    if (checkpoint_policy == CheckpointPolicy::PRINT)
+        std::cerr << id_counter.load() << ",e" << std::endl;
 
     compacting.store(false, std::memory_order_release);
 }
@@ -266,6 +273,7 @@ void IndexServer::replay_wal()
     last_compaction_wm = high_watermark;
     mem_index.set_low_watermark(high_watermark);
     id_counter.store(high_watermark);
+    last_compaction_timestamp = stats.max_timestamp;
 }
 
 } // namespace tagtree

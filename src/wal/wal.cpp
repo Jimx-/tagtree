@@ -275,7 +275,8 @@ size_t WAL::close_segment()
     return get_next_segment();
 }
 
-void WAL::write_checkpoint(TSID watermark, size_t segment)
+void WAL::write_checkpoint(TSID watermark, size_t segment,
+                           uint64_t max_timestamp)
 {
     std::lock_guard<std::mutex> lock(mutex);
 
@@ -283,10 +284,11 @@ void WAL::write_checkpoint(TSID watermark, size_t segment)
     int fd = ::open(cp_dir_tmp.c_str(), O_WRONLY | O_CREAT,
                     S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
-    uint32_t buf[3];
+    uint32_t buf[5];
     buf[0] = segment;
     buf[1] = watermark;
-    buf[2] = CRC::Calculate(buf, 2 * sizeof(uint32_t), CRC::CRC_32());
+    *(uint64_t*)&buf[2] = max_timestamp;
+    buf[4] = CRC::Calculate(buf, 4 * sizeof(uint32_t), CRC::CRC_32());
 
     ssize_t retval;
     do {
@@ -315,7 +317,7 @@ void WAL::last_checkpoint(CheckpointStats& stats)
     }
 
     int fd = ::open(checkpoint_path.c_str(), O_RDONLY);
-    uint32_t buf[3];
+    uint32_t buf[5];
 
     ssize_t retval;
     do {
@@ -328,9 +330,10 @@ void WAL::last_checkpoint(CheckpointStats& stats)
 
     stats.last_segment = buf[0];
     stats.low_watermark = buf[1];
+    stats.max_timestamp = *(uint64_t*)&buf[2];
 
-    uint32_t crc = CRC::Calculate(buf, 2 * sizeof(uint32_t), CRC::CRC_32());
-    if (crc != buf[2]) {
+    uint32_t crc = CRC::Calculate(buf, 4 * sizeof(uint32_t), CRC::CRC_32());
+    if (crc != buf[4]) {
         throw std::runtime_error(
             "failed to read last checkpoint (checksum error)");
     }

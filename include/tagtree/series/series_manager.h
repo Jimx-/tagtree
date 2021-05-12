@@ -76,6 +76,8 @@ public:
     SeriesEntry* get(TSID tsid);
     SeriesEntry* get_by_label_set(const std::vector<promql::Label>& lset);
 
+    bool get_label_set(TSID tsid, std::vector<promql::Label>& lset);
+
     SymbolTable::Ref add_symbol(std::string_view symbol)
     {
         return symtab.add_symbol(symbol);

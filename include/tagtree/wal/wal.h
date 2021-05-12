@@ -14,6 +14,7 @@ namespace tagtree {
 struct CheckpointStats {
     unsigned int last_segment;
     TSID low_watermark;
+    uint64_t max_timestamp;
 };
 
 /* write-ahead logger */
@@ -28,7 +29,8 @@ public:
 
     void get_segment_range(size_t& start, size_t& end);
 
-    void write_checkpoint(TSID watermark, size_t segment);
+    void write_checkpoint(TSID watermark, size_t segment,
+                          uint64_t max_timestamp);
     void last_checkpoint(CheckpointStats& stats);
 
     std::unique_ptr<WALReader> get_segment_reader(size_t seg);

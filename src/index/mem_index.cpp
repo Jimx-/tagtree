@@ -245,19 +245,24 @@ void MemStripe::label_values(const std::string& label_name,
     }
 }
 
-void MemIndex::snapshot(TSID limit, MemIndexSnapshot& snapshot)
+uint64_t MemIndex::snapshot(TSID limit, MemIndexSnapshot& snapshot)
 {
+    uint64_t max_time = 0;
     snapshot.clear();
 
     for (auto& stripe : stripes)
-        stripe.snapshot(limit, snapshot);
+        max_time = std::max(max_time, stripe.snapshot(limit, snapshot));
 
     current_limit = NO_LIMIT;
+
+    return max_time;
 }
 
-void MemStripe::snapshot(TSID limit, MemIndexSnapshot& snapshot)
+uint64_t MemStripe::snapshot(TSID limit, MemIndexSnapshot& snapshot)
 {
     std::shared_lock<std::shared_mutex> lock(mutex);
+
+    uint64_t max_time = 0;
 
     for (auto&& name : map) {
         std::vector<LabeledPostings> entries;
@@ -274,10 +279,14 @@ void MemStripe::snapshot(TSID limit, MemIndexSnapshot& snapshot)
             auto& new_bitmap = entries.back().postings;
             new_bitmap = bitmap;
             new_bitmap.runOptimize();
+
+            max_time = std::max(max_time, value.second.max_timestamp.load());
         }
 
         snapshot[name.first] = entries;
     }
+
+    return max_time;
 }
 
 void MemIndex::gc()

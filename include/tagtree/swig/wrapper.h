@@ -23,9 +23,15 @@ public:
     void ResolveLabelMatchers(const std::vector<promql::LabelMatcher>& matchers,
                               long mint, long maxt,
                               std::vector<unsigned long>& tsids);
+    void ManualCompact();
+
+    void PrintStats();
 
 private:
     tagtree::IndexServer server;
+
+    double add_series_time, commit_batch_time, series_labels_time,
+        resolve_label_time, compact_time;
 };
 
 IndexServerWrapper* CreateIndexServer(const std::string& dir, size_t cache_size,
