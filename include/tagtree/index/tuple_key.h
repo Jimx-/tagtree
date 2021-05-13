@@ -126,6 +126,7 @@ public:
         std::stringstream ss;
         ss << std::hex << std::setfill('0');
         for (int i = 0; i < KEY_LENGTH; ++i) {
+            if (i == NB || i == NB + VB || i == NB + VB + 8) ss << '|';
             ss << std::setw(2) << static_cast<unsigned>(buf[i]);
         }
         return ss.str();

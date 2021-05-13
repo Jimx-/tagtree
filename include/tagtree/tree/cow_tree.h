@@ -332,9 +332,13 @@ public:
             ended = false;
             tree->collect_values(version, key, &next_key, key_first, key_last,
                                  value_first, value_last);
+
             auto it = std::lower_bound(key_first, key_last, key, kcmp);
             if (it == key_last) {
-                ended = true;
+                get_next_batch();
+
+                if (ended) return;
+                kvp = std::make_pair(*key_first, *value_first);
             } else {
                 value_first += std::distance(key_first, it);
                 key_first = it;
