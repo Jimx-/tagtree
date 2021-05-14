@@ -108,12 +108,11 @@ void IndexServer::resolve_label_matchers(
     }
 
     if (equal_pred) {
-        auto entry = series_manager->get_by_label_set(labels);
+        auto tsid = series_manager->get_tsid_by_label_set(labels);
 
-        if (entry) {
+        if (tsid) {
             tsids = MemPostingList();
-            tsids.add(entry->tsid);
-            entry->unlock();
+            tsids.add(tsid.value());
             return;
         }
     }

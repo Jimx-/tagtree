@@ -56,6 +56,10 @@ public:
         series_hash_map.erase(hash);
     }
 
+    std::optional<TSID>
+    get_tsid_by_label_set(uint64_t hash,
+                          const std::vector<promql::Label>& lset);
+
 private:
     std::unordered_map<uint64_t, SeriesEntry*> series_hash_map;
     std::shared_mutex mutex;
@@ -75,6 +79,8 @@ public:
              bool is_new = true);
     SeriesEntry* get(TSID tsid);
     SeriesEntry* get_by_label_set(const std::vector<promql::Label>& lset);
+    std::optional<TSID>
+    get_tsid_by_label_set(const std::vector<promql::Label>& lset);
 
     bool get_label_set(TSID tsid, std::vector<promql::Label>& lset);
 

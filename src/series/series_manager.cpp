@@ -120,6 +120,35 @@ bool AbstractSeriesManager::get_label_set(TSID tsid,
     return true;
 }
 
+std::optional<TSID>
+SeriesStripe::get_tsid_by_label_set(uint64_t hash,
+                                    const std::vector<promql::Label>& lset)
+{
+    std::shared_lock<std::shared_mutex> guard(mutex);
+    auto it = series_hash_map.find(hash);
+    if (it == series_hash_map.end()) return std::nullopt;
+
+    auto entry = it->second;
+
+    if (entry->labels.size() != lset.size()) return std::nullopt;
+
+    auto it1 = lset.begin();
+    auto it2 = entry->labels.begin();
+    for (; it1 != lset.end(); it1++, it2++) {
+        if (it1->name != it2->name || it1->value != it2->value)
+            return std::nullopt;
+    }
+
+    return entry->tsid;
+}
+
+std::optional<TSID> AbstractSeriesManager::get_tsid_by_label_set(
+    const std::vector<promql::Label>& lset)
+{
+    auto hash = get_label_set_hash(lset);
+    return get_stripe(hash).get_tsid_by_label_set(hash, lset);
+}
+
 SeriesEntry*
 AbstractSeriesManager::get_by_label_set(const std::vector<promql::Label>& lset)
 {
