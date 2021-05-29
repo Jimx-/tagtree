@@ -1,0 +1,32 @@
+#+TITLE: TagTree
+
+A tagging index for time series database.
+
+* Build
+#+BEGIN_SRC shell
+$ git submodule update --init
+$ mkdir build && cd build
+$ cmake .. && make
+#+END_SRC
+
+* Original Prometheus Integration
+TagTree can be integrated with the original Prometheus storage backend (tsdb). The modified Prometheus code is in [[https://github.com/Jimx-/prometheus/tree/tagtree][this repo]]. To run the integrated time series database, you need to prepare the ~tagtreego~ module:
+#+BEGIN_SRC shell
+$ git clone https://github.com/Jimx-/tagtree.git $GOPATH/src/github.com/Jimx-/tagtree
+$ cd $GOPATH/src/github.com/Jimx-/tagtree
+$ git submodule update --init
+$ mkdir build && cd build
+$ cmake .. && make
+$ cd ..
+$ ln -s build/tagtree/3rdparty/bptree/libbptree.a tagtreego/
+$ ln -s build/promql/libpromql.a tagtreego/
+$ ln -s build/tagtree/libtagtree.a tagtreego/
+$ ln -s build/tagtree/libtagtreego.so tagtreego/
+$ ln -s build/tagtree/tagtreego.go tagtreego/
+#+END_SRC
+
+After that, the integrated Prometheus server can be started:
+#+BEGIN_SRC shell
+$ cd $GOPATH/src/github.com/prometheus/prometheus
+$ LD_LIBRARY_PATH=$GOAPTH/src/github.com/Jimx-/tagtree/build/tagtree:$LD_LIBRARY_PATH GO111MODULE=off go run cmd/prometheus/main.go --config.file=config.yml ...
+#+END_SRC
