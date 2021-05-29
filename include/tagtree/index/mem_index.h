@@ -31,8 +31,10 @@ struct LabeledPostings {
 using MemIndexSnapshot =
     std::unordered_map<std::string, std::vector<LabeledPostings>>;
 
-class MemStripe {
+class alignas(64) MemStripe {
 public:
+    void reserve(size_t capacity) { map.reserve(capacity); }
+
     void add(const promql::Label& label, TSID tsid, uint64_t timestamp,
              bool set_next);
     void touch(const promql::Label& label, uint64_t timestamp);
@@ -53,10 +55,12 @@ private:
                            std::unordered_map<std::string, MemPostings>>;
 
     MemMapType map;
+    std::atomic<uint64_t> max_timestamp;
     std::shared_mutex mutex;
 
     struct __Inner {
         MemMapType __map;
+        std::atomic<uint64_t> __max_timestamp;
         std::shared_mutex __mutex;
     };
     char __padding[-sizeof(__Inner) & 63];

@@ -137,7 +137,15 @@ void IndexServer::resolve_label_matchers(
 
 bool IndexServer::get_labels(TSID tsid, std::vector<promql::Label>& labels)
 {
-    return series_manager->get_label_set(tsid, labels);
+    // return series_manager->get_label_set(tsid, labels);
+
+    auto* entry = series_manager->get(tsid);
+    if (!entry) return false;
+    labels.clear();
+    std::copy(entry->labels.begin(), entry->labels.end(),
+              std::back_inserter(labels));
+    entry->unlock();
+    return true;
 }
 
 void IndexServer::label_values(const std::string& label_name,
@@ -191,7 +199,7 @@ void IndexServer::manual_compact() { try_compact(true, false); }
 bool IndexServer::compactable(TSID current_id)
 {
     return (checkpoint_policy != CheckpointPolicy::DISABLED) &&
-           (current_id >= last_compaction_wm + 50000);
+           (current_id >= last_compaction_wm + 100000);
 }
 
 void IndexServer::compact(TSID current_id)

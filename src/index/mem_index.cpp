@@ -12,18 +12,24 @@ void MemStripe::add(const promql::Label& label, TSID tsid, uint64_t timestamp,
     std::unique_lock<std::shared_mutex> lock(mutex);
 
     map[label.name][label.value].add(tsid, timestamp, set_next);
+
+    max_timestamp.store(std::max(max_timestamp.load(), timestamp));
 }
 
 void MemStripe::touch(const promql::Label& label, uint64_t timestamp)
 {
-    std::shared_lock<std::shared_mutex> lock(mutex);
-    auto name_it = map.find(label.name);
-    if (name_it == map.end()) return;
-    auto& value_map = name_it->second;
-    auto value_it = value_map.find(label.value);
-    if (value_it == value_map.end()) return;
+    uint64_t prev_value = max_timestamp;
+    while (prev_value < timestamp &&
+           !max_timestamp.compare_exchange_weak(prev_value, timestamp)) {
+    }
+    // std::shared_lock<std::shared_mutex> lock(mutex);
+    // auto name_it = map.find(label.name);
+    // if (name_it == map.end()) return;
+    // auto& value_map = name_it->second;
+    // auto value_it = value_map.find(label.value);
+    // if (value_it == value_map.end()) return;
 
-    return value_it->second.touch(timestamp);
+    // value_it->second.touch(timestamp);
 }
 
 void MemStripe::get_matcher_postings(const promql::LabelMatcher& matcher,
@@ -46,7 +52,8 @@ void MemStripe::get_matcher_postings(const promql::LabelMatcher& matcher,
 
 MemIndex::MemIndex(size_t capacity) : low_watermark(0), current_limit(NO_LIMIT)
 {
-    // map.reserve(capacity);
+    for (int i = 0; i < NUM_STRIPES; i++)
+        stripes[i].reserve(capacity);
 }
 
 MemStripe& MemIndex::get_stripe(const promql::Label& label)
@@ -106,7 +113,6 @@ void MemIndex::touch(const std::vector<promql::Label>& labels, TSID tsid,
                      uint64_t timestamp)
 {
     assert(!labels.empty());
-    std::shared_lock<std::shared_mutex> lock(mutex);
 
     if (get_stripe(labels.front()).contains(labels.front(), tsid)) {
         for (auto&& p : labels) {
@@ -262,7 +268,7 @@ uint64_t MemStripe::snapshot(TSID limit, MemIndexSnapshot& snapshot)
 {
     std::shared_lock<std::shared_mutex> lock(mutex);
 
-    uint64_t max_time = 0;
+    uint64_t max_time = max_timestamp.load();
 
     for (auto&& name : map) {
         std::vector<LabeledPostings> entries;
@@ -275,12 +281,10 @@ uint64_t MemStripe::snapshot(TSID limit, MemIndexSnapshot& snapshot)
             if (bitmap.minimum() > limit) continue;
 
             entries.emplace_back(value.first, value.second.min_timestamp,
-                                 value.second.max_timestamp);
+                                 max_time);
             auto& new_bitmap = entries.back().postings;
             new_bitmap = bitmap;
             new_bitmap.runOptimize();
-
-            max_time = std::max(max_time, value.second.max_timestamp.load());
         }
 
         snapshot[name.first] = entries;
